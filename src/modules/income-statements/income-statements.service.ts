@@ -1,13 +1,17 @@
 // src/modules/income-statements/income-statements.service.ts
+
 import { Injectable } from '@nestjs/common';
-import { DynamicsService } from '../dynamics/dynamics.service';
+import { IncomeStatementsResponse } from '../../common/types/income-statements.types';
+import { DynamicsReportsService } from '../dynamics/dynamics-reports.service';
 
 @Injectable()
 export class IncomeStatementsService {
-  constructor(private readonly dynamicsService: DynamicsService) {}
+  constructor(private readonly dynamicsReportsService: DynamicsReportsService) {}
 
-  async getIncomeStatements(startDate: string, endDate: string) {
-    // Implement logic to fetch and process income statements
-    return this.dynamicsService.getIncomeStatements(startDate, endDate);
+  async getIncomeStatements(
+    startDate: string,
+    endDate: string,
+  ): Promise<IncomeStatementsResponse> {
+    return this.dynamicsReportsService.getIncomeStatements(startDate, endDate);
   }
 }

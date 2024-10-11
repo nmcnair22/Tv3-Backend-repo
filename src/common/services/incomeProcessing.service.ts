@@ -1,5 +1,8 @@
+// src/common/services/incomeProcessing.service.ts
+
 import { Injectable, Logger } from '@nestjs/common';
-import { DynamicsService } from '../../modules/dynamics/dynamics.service';
+import { DynamicsInvoiceService } from '../../modules/dynamics/dynamics-invoice.service';
+import { DynamicsPaymentService } from '../../modules/dynamics/dynamics-payment.service';
 import { ProductCategoryMappingService } from './productCategoryMapping.service';
 
 @Injectable()
@@ -8,16 +11,27 @@ export class IncomeProcessingService {
 
   constructor(
     private readonly productCategoryMappingService: ProductCategoryMappingService,
-    private readonly dynamicsService: DynamicsService
+    private readonly dynamicsInvoiceService: DynamicsInvoiceService,
+    private readonly dynamicsPaymentService: DynamicsPaymentService,
   ) {}
 
   async processIncome(startDate?: string, endDate?: string): Promise<any> {
-    const productToCategoryMap = await this.productCategoryMappingService.getProductToCategoryMap();
-    this.logger.debug('Product to Category Map:', JSON.stringify(productToCategoryMap)); // Log the map
+    const productToCategoryMap =
+      await this.productCategoryMappingService.getProductToCategoryMap();
+    this.logger.debug(
+      'Product to Category Map:',
+      JSON.stringify(productToCategoryMap),
+    ); // Log the map
 
     // Fetch invoices and payments
-    const invoices = await this.dynamicsService.getInvoices(startDate, endDate);
-    const payments = await this.dynamicsService.getPayments(startDate, endDate);
+    const invoices = await this.dynamicsInvoiceService.getInvoices(
+      startDate,
+      endDate,
+    );
+    const payments = await this.dynamicsPaymentService.getPayments(
+      startDate,
+      endDate,
+    );
 
     // Log the full response from invoices
     this.logger.debug('Invoices response:', JSON.stringify(invoices));
@@ -36,7 +50,8 @@ export class IncomeProcessingService {
 
     // Categorize invoices
     invoices.forEach((invoice) => {
-      const category = productToCategoryMap[invoice.itemNumber] || 'Uncategorized Income';
+      const category =
+        productToCategoryMap[invoice.itemNumber] || 'Uncategorized Income';
       if (!incomeCategories[category]) {
         incomeCategories[category] = { invoiced: 0, paid: 0 };
       }
@@ -45,14 +60,18 @@ export class IncomeProcessingService {
 
     // Categorize payments
     payments.forEach((payment) => {
-      const category = productToCategoryMap[payment.itemNumber] || 'Uncategorized Income';
+      const category =
+        productToCategoryMap[payment.itemNumber] || 'Uncategorized Income';
       if (!incomeCategories[category]) {
         incomeCategories[category] = { invoiced: 0, paid: 0 };
       }
       incomeCategories[category].paid += payment.totalAmount;
     });
 
-    this.logger.debug('Final categorized income:', JSON.stringify(incomeCategories)); // Log the final result
+    this.logger.debug(
+      'Final categorized income:',
+      JSON.stringify(incomeCategories),
+    ); // Log the final result
     return incomeCategories;
   }
 }

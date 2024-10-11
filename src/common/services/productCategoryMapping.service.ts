@@ -1,18 +1,22 @@
-// src/services/productCategoryMapping.service.ts
+// src/common/services/productCategoryMapping.service.ts
 
 import { Injectable, Logger } from '@nestjs/common';
-import { DynamicsService } from '../../modules/dynamics/dynamics.service';
+import { DynamicsItemService } from '../../modules/dynamics/dynamics-item.service';
+import { DynamicsReportsService } from '../../modules/dynamics/dynamics-reports.service';
 
 @Injectable()
 export class ProductCategoryMappingService {
   private readonly logger = new Logger(ProductCategoryMappingService.name);
 
-  constructor(private readonly dynamicsService: DynamicsService) {}
+  constructor(
+    private readonly dynamicsItemService: DynamicsItemService,
+    private readonly dynamicsReportsService: DynamicsReportsService,
+  ) {}
 
   async getProductToCategoryMap(): Promise<Record<string, string>> {
     try {
       // Fetch product items from the Dynamics API
-      const products = await this.dynamicsService.getItems();
+      const products = await this.dynamicsItemService.getItems();
       this.logger.debug('Products fetched:', JSON.stringify(products)); // Log fetched products
 
       const incomeCategories = await this.getIncomeCategories();
@@ -24,7 +28,7 @@ export class ProductCategoryMappingService {
       products.forEach((product) => {
         const postingGroup = product.generalProductPostingGroupCode;
         const matchedCategory = incomeCategories.find((category) =>
-          category.matchPostingGroup(postingGroup)
+          category.matchPostingGroup(postingGroup),
         );
 
         if (matchedCategory) {
@@ -32,12 +36,15 @@ export class ProductCategoryMappingService {
         } else {
           productToCategoryMap[product.number] = 'Uncategorized Income';
           this.logger.warn(
-            `Product ${product.displayName} (${product.number}) is uncategorized.`
+            `Product ${product.displayName} (${product.number}) is uncategorized.`,
           );
         }
       });
 
-      this.logger.debug('Product to Category Mapping:', JSON.stringify(productToCategoryMap)); // Log the mapping
+      this.logger.debug(
+        'Product to Category Mapping:',
+        JSON.stringify(productToCategoryMap),
+      ); // Log the mapping
 
       return productToCategoryMap;
     } catch (error) {
@@ -49,16 +56,22 @@ export class ProductCategoryMappingService {
   async getIncomeCategories() {
     try {
       // Fetch income statements and infer categories from it
-      const incomeStatements = await this.dynamicsService.getIncomeStatements();
-      this.logger.debug('Income statements fetched:', JSON.stringify(incomeStatements)); // Log the income statements
+      const incomeStatements = await this.dynamicsReportsService.getIncomeStatements();
+      this.logger.debug(
+        'Income statements fetched:',
+        JSON.stringify(incomeStatements),
+      ); // Log the income statements
 
       // Extract distinct categories based on the income statement data
       return incomeStatements.value.map((statement) => ({
         name: statement.display,
-        matchPostingGroup: (group) => group === statement.display,  // Adjust the match logic as necessary
+        matchPostingGroup: (group) => group === statement.display, // Adjust the match logic as necessary
       }));
     } catch (error) {
-      this.logger.error('Failed to fetch income categories from income statements', error);
+      this.logger.error(
+        'Failed to fetch income categories from income statements',
+        error,
+      );
       throw error;
     }
   }
