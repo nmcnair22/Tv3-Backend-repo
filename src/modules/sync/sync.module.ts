@@ -5,7 +5,9 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 // Import all entities
+import { CustomerLedgerEntry } from './entities/customer-ledger-entry.entity';
 import { Customer } from './entities/customer.entity';
+import { GeneralLedgerEntry } from './entities/general-ledger-entry.entity';
 import { Item } from './entities/item.entity';
 import { PurchaseCreditMemoLine } from './entities/purchase-credit-memo-line.entity';
 import { PurchaseCreditMemo } from './entities/purchase-credit-memo.entity';
@@ -17,6 +19,7 @@ import { SalesCreditMemoLine } from './entities/sales-credit-memo-line.entity';
 import { SalesCreditMemo } from './entities/sales-credit-memo.entity';
 import { SalesInvoiceLine } from './entities/sales-invoice-line.entity';
 import { SalesInvoice } from './entities/sales-invoice.entity';
+import { SyncStatus } from './entities/sync-status.entity';
 import { Vendor } from './entities/vendor.entity';
 
 // Import services
@@ -34,6 +37,7 @@ import { SyncController } from '../sync/sync.controller';
 @Module({
   imports: [
     TypeOrmModule.forFeature([
+      SyncStatus,
       Customer,
       Vendor,
       Item,
@@ -42,17 +46,19 @@ import { SyncController } from '../sync/sync.controller';
       SalesCreditMemo,
       SalesCreditMemoLine,
       PurchaseInvoice,
-      PurchaseInvoiceLine,   // Ensure this line is included
+      PurchaseInvoiceLine,
       PurchaseOrder,
-      PurchaseOrderLine,     // Ensure this line is included
+      PurchaseOrderLine,
       PurchaseCreditMemo,
       PurchaseCreditMemoLine,
+      GeneralLedgerEntry,
+      CustomerLedgerEntry,
     ]),
     HttpModule,
-    DynamicsModule, // Import if you need access to DynamicsAuthService
+    DynamicsModule, 
   ],
   providers: [SyncService, V2ApiService, TmcApiService],
-  controllers: [SyncController], // Include your SyncController if implemented
+  controllers: [SyncController],
   exports: [SyncService],
 })
 export class SyncModule {}

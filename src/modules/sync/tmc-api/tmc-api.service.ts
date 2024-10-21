@@ -1,74 +1,90 @@
 // src/modules/sync/tmc-api/tmc-api.service.ts
 
-import { HttpService } from '@nestjs/axios'; // Ensure this import exists
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { HttpService } from '@nestjs/axios';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AxiosRequestConfig } from 'axios';
+import { firstValueFrom } from 'rxjs';
 import { DynamicsAuthService } from '../../dynamics/dynamics-auth.service';
-import { DynamicsBaseService } from '../../dynamics/dynamics-base.service';
 
 @Injectable()
-export class TmcApiService extends DynamicsBaseService {
+export class TmcApiService {
+  private readonly logger = new Logger(TmcApiService.name);
+
   constructor(
-    protected readonly httpService: HttpService,
-    protected readonly configService: ConfigService,
-    protected readonly dynamicsAuthService: DynamicsAuthService,
-  ) {
-    super(httpService, configService, dynamicsAuthService); // Correctly passing three arguments
+    private readonly httpService: HttpService,
+    private readonly configService: ConfigService,
+    private readonly dynamicsAuthService: DynamicsAuthService,
+  ) {}
+
+  /**
+   * Get the base URL for the TMC Integration API.
+   */
+  private baseUrl(): string {
+    const tenantId = this.configService.get<string>('tenant_id');
+    const environmentId = this.configService.get<string>('environment_id');
+    const companyId = this.configService.get<string>('company_id');
+    // Adjust the API path to include the TMC Integration API
+    return `https://api.businesscentral.dynamics.com/v2.0/${tenantId}/${environmentId}/api/tmc/CISSDMIntegration/v1.0/companies(${companyId})`;
+  }
+
+  /**
+   * Make a GET request to the specified URL with authentication and optional query parameters.
+   */
+  private async getRequest(url: string, params?: Record<string, string>): Promise<any[]> {
+    try {
+      const headers = await this.dynamicsAuthService.getHeaders();
+      const config: AxiosRequestConfig = {
+        headers,
+        params,
+      };
+
+      const response = await firstValueFrom(
+        this.httpService.get(url, config),
+      );
+
+      this.logger.debug(`GET request to ${url} succeeded with status ${response.status}`);
+      return response.data.value; // Assuming OData response
+    } catch (error) {
+      if (error.response) {
+        this.logger.error(`GET request to ${url} failed with status ${error.response.status}: ${error.response.statusText}`);
+        this.logger.error(`Response Data: ${JSON.stringify(error.response.data)}`);
+      } else if (error.request) {
+        this.logger.error(`GET request to ${url} failed: No response received.`);
+      } else {
+        this.logger.error(`GET request to ${url} failed: ${error.message}`);
+      }
+      throw new HttpException(
+        `Failed to fetch data from ${url}`,
+        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 
   /**
    * Fetch customers from the TMC Integration API.
+   * @param lastSyncDateTime The timestamp of the last successful synchronization.
    */
-  async getTmcCustomers(): Promise<any[]> {
-    const endpoint = '/customers'; // Adjust the endpoint as needed
-    try {
-      const response = await this.httpGet<any>(endpoint, undefined, true); // Changed from any[] to any
-
-      // Log the raw response for debugging
-      this.logger.debug(`Raw response from TMC Integration API: ${JSON.stringify(response)}`);
-
-      if (response && Array.isArray(response.value)) { // Directly check for response.value
-        this.logger.debug(`Fetched ${response.value.length} customers from TMC Integration API`);
-        return response.value;
-      } else {
-        this.logger.error(`Unexpected response format: ${JSON.stringify(response)}`);
-        throw new HttpException(
-          'Unexpected response format from TMC Integration API',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-    } catch (error) {
-      this.logger.error(`Failed to fetch customers from TMC Integration API: ${error.message}`);
-      if (error.response) {
-        this.logger.error(`Response Data: ${JSON.stringify(error.response.data)}`);
-      }
-      throw new HttpException(
-        `Failed to fetch customers from TMC Integration API: ${error.message}`,
-        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+  async getTmcCustomers(lastSyncDateTime: Date): Promise<any[]> {
+    const url = `${this.baseUrl()}/customers`;
+    const params = {
+      '$filter': `lastModifiedDateTime gt ${lastSyncDateTime.toISOString()}`,
+    };
+    return await this.getRequest(url, params);
   }
 
   /**
-   * Example method to post data to the TMC Integration API.
+   * Fetch customer ledger entries from the TMC API.
+   * @param lastSyncDateTime The timestamp of the last successful synchronization.
    */
-  async createTmcCustomer(customerData: any): Promise<any> {
-    const endpoint = '/customers'; // Adjust the endpoint as needed
-    try {
-      const response = await this.httpPost<any, any>(endpoint, customerData, true); // useCustomApi=true
-      this.logger.debug(`Created customer in TMC Integration API at ${endpoint}`);
-      return response;
-    } catch (error) {
-      this.logger.error(`Failed to create customer in TMC Integration API: ${error.message}`);
-      if (error.response) {
-        this.logger.error(`Response Data: ${JSON.stringify(error.response.data)}`);
-      }
-      throw new HttpException(
-        `Failed to create customer in TMC Integration API: ${error.message}`,
-        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+  async getCustomerLedgerEntries(lastSyncDateTime: Date): Promise<any[]> {
+    const url = `${this.baseUrl()}/CustLedgerEntries`;
+    const params = {
+      '$filter': `lastModifiedDateTime gt ${lastSyncDateTime.toISOString()}`,
+    };
+    return await this.getRequest(url, params);
   }
 
-  // Implement additional methods as required
+
+  // Add more methods as needed to fetch other data from the TMC API
 }
