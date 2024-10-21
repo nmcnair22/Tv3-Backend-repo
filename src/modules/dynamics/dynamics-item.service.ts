@@ -1,19 +1,24 @@
-// src/modules/dynamics/dynamics-item.service.ts
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { AxiosRequestConfig } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import { DynamicsBaseService } from './dynamics-base.service';
 
+// Assuming we have types for Item defined
+import { Item } from '../../common/types/item.types'; // Ensure the type exists
+
 @Injectable()
 export class DynamicsItemService extends DynamicsBaseService {
-  private readonly logger = new Logger(DynamicsItemService.name);
+  protected readonly logger = new Logger(DynamicsItemService.name);
 
-  // Fetch product items
-  async getItems(): Promise<any[]> {
+  /**
+   * Fetches product items from the Dynamics API.
+   * @returns Array of Item objects.
+   */
+  async getItems(): Promise<Item[]> {
     this.logger.debug('Fetching items');
-    const url = `${this.apiUrl}/items`;
+    const url = `${this.standardApiUrl}/items`;
 
-    const items = [];
+    const items: Item[] = [];
     let nextLink: string | undefined = '';
 
     try {
@@ -41,9 +46,7 @@ export class DynamicsItemService extends DynamicsBaseService {
     } catch (error) {
       this.logger.error('Failed to fetch items', error);
       if (error.response) {
-        this.logger.error(
-          `Error response data: ${JSON.stringify(error.response.data)}`,
-        );
+        this.logger.error(`Error response data: ${JSON.stringify(error.response.data)}`);
       }
       throw new HttpException(
         'Failed to fetch items',

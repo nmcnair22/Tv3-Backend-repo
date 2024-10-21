@@ -11,7 +11,7 @@ import { DynamicsBaseService } from './dynamics-base.service';
 
 @Injectable()
 export class DynamicsReportsService extends DynamicsBaseService {
-  private readonly logger = new Logger(DynamicsReportsService.name);
+  protected readonly logger = new Logger(DynamicsReportsService.name);
 
   // Method: getIncomeStatements
   async getIncomeStatements(
@@ -22,7 +22,7 @@ export class DynamicsReportsService extends DynamicsBaseService {
       `Service received startDate: ${startDate}, endDate: ${endDate}`,
     );
 
-    const url = `${this.apiUrl}/incomeStatements`;
+    const url = `${this.standardApiUrl}/incomeStatements`;
 
     let filter = '';
     if (startDate && endDate) {
@@ -52,7 +52,7 @@ export class DynamicsReportsService extends DynamicsBaseService {
     try {
       const response = await firstValueFrom(
         this.httpService.get<IncomeStatementsResponse>(url, config),
-      );
+      ) as { data: IncomeStatementsResponse };
 
       this.logger.debug(`Income statements data fetched successfully`);
       return response.data;
@@ -77,7 +77,7 @@ export class DynamicsReportsService extends DynamicsBaseService {
   ): Promise<CashFlowResponse> {
     this.logger.debug(`Fetching cash flow statements`);
 
-    const url = `${this.apiUrl}/cashFlowStatements`;
+    const url = `${this.standardApiUrl}/cashFlowStatements`;
 
     let filter = '';
     if (startDate && endDate) {
@@ -101,7 +101,7 @@ export class DynamicsReportsService extends DynamicsBaseService {
     try {
       const response = await firstValueFrom(
         this.httpService.get<CashFlowResponse>(url, config),
-      );
+      ) as { data: CashFlowResponse };
 
       this.logger.debug(`Cash flow statements data fetched successfully`);
       return response.data;
@@ -123,7 +123,7 @@ export class DynamicsReportsService extends DynamicsBaseService {
   async getBalanceSheetStatements(date: string): Promise<BalanceSheetResponse> {
     this.logger.debug(`Fetching balance sheet statements for date: ${date}`);
 
-    const url = `${this.apiUrl}/balanceSheets`;
+    const url = `${this.standardApiUrl}/balanceSheets`;
 
     const params: Record<string, string> = {
       $orderby: 'lineNumber',
@@ -144,7 +144,7 @@ export class DynamicsReportsService extends DynamicsBaseService {
     try {
       const response = await firstValueFrom(
         this.httpService.get<BalanceSheetResponse>(url, config),
-      );
+      ) as { data: BalanceSheetResponse };
 
       this.logger.debug(`Balance sheet statements data fetched successfully`);
       return response.data;
@@ -169,7 +169,7 @@ export class DynamicsReportsService extends DynamicsBaseService {
   ): Promise<AgedReceivableItem[]> {
     this.logger.debug(`Fetching aged receivables as of ${asOfDate}`);
 
-    const url = `${this.apiUrl}/agedAccountsReceivables`;
+    const url = `${this.standardApiUrl}/agedAccountsReceivables`;
 
     const params: Record<string, string> = {
       agedAsOfDate: asOfDate,
@@ -184,7 +184,7 @@ export class DynamicsReportsService extends DynamicsBaseService {
     };
 
     try {
-      const response = await firstValueFrom(this.httpService.get(url, config));
+      const response = await firstValueFrom(this.httpService.get<{ value: AgedReceivableItem[] }>(url, config)) as { data: { value: AgedReceivableItem[] } };
       this.logger.debug(`Aged receivables data fetched successfully`);
       return response.data.value;
     } catch (error) {

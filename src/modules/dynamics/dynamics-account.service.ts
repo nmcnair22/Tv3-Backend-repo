@@ -6,12 +6,12 @@ import { DynamicsBaseService } from './dynamics-base.service';
 
 @Injectable()
 export class DynamicsAccountService extends DynamicsBaseService {
-  private readonly logger = new Logger(DynamicsAccountService.name);
+  protected readonly logger = new Logger(DynamicsAccountService.name);
 
   // Fetch income accounts
   async getIncomeAccounts(): Promise<any[]> {
     this.logger.debug('Fetching income accounts');
-    const url = `${this.apiUrl}/accounts`;
+    const url = `${this.standardApiUrl}/accounts`;
 
     const params: Record<string, string> = {
       $filter: `category eq 'Income'`,
@@ -39,6 +39,32 @@ export class DynamicsAccountService extends DynamicsBaseService {
         'Failed to fetch income accounts',
         error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
+    }
+  }
+
+  async getIncomeCategories(): Promise<Record<string, string>> {
+    this.logger.debug('Fetching income accounts');
+    const url = `${this.standardApiUrl}/accounts`;
+
+    const params: Record<string, string> = {
+      $filter: `category eq 'Income'`,
+      $select: 'number,subCategory',
+    };
+
+    try {
+      const response = await firstValueFrom(this.httpService.get(url, { headers: await this.getHeaders(), params }));
+      const incomeAccounts = response.data.value;
+      this.logger.debug(`Fetched ${incomeAccounts.length} income accounts`);
+
+      const accountToCategoryMap: Record<string, string> = {};
+      incomeAccounts.forEach((account) => {
+        accountToCategoryMap[account.number] = account.subCategory || 'Uncategorized Income';
+      });
+
+      return accountToCategoryMap;
+    } catch (error) {
+      this.logger.error('Failed to fetch income accounts', error);
+      throw new HttpException('Failed to fetch income accounts', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }
