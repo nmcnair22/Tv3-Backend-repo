@@ -1,7 +1,17 @@
 // src/modules/financial-dashboard/financial-dashboard.controller.ts
 
-import { Controller, Get, HttpException, HttpStatus, Logger, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpException,
+  HttpStatus,
+  Logger,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { AgedReceivableItem } from '../../common/types/aged-receivables.types';
+import { PerCustomerDSOMetric } from '../../common/types/payment.types';
 import { FinancialDashboardService } from './financial-dashboard.service';
 
 @Controller('financial-dashboard')
@@ -11,65 +21,123 @@ export class FinancialDashboardController {
   constructor(private readonly financialDashboardService: FinancialDashboardService) {}
 
   @Get('inflows')
-  async getInflowsData(
-    @Query('startDate') startDate: string,
-    @Query('endDate') endDate: string,
-  ) {
-    this.logger.debug(`Received request for inflows data from ${startDate} to ${endDate}`);
-
+  async getInflowsData(@Query('startDate') startDate: string, @Query('endDate') endDate: string) {
     try {
-      const data = await this.financialDashboardService.getInflowsData(startDate, endDate);
-      return data;
+      return await this.financialDashboardService.getInflowsData(startDate, endDate);
     } catch (error) {
       this.logger.error(`Error fetching inflows data: ${error.message}`);
-      throw new HttpException(
-        error.message,
-        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to fetch inflows data', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
+  @Get('dso-per-customer')
+  async getDSOPerCustomer(
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ): Promise<PerCustomerDSOMetric[]> {
+    return this.financialDashboardService.getPerCustomerDSOMetrics(startDate, endDate);
+  }
+  
   @Get('aging-report')
   async getAgingReport(@Query('asOfDate') asOfDate: string): Promise<AgedReceivableItem[]> {
-    if (!asOfDate) {
-      throw new HttpException('asOfDate is required', HttpStatus.BAD_REQUEST);
-    }
-
     try {
-      const data = await this.financialDashboardService.getAgingReport(asOfDate);
-      return data;
+      return await this.financialDashboardService.getAgingReport(asOfDate);
     } catch (error) {
       this.logger.error(`Error fetching aging report: ${error.message}`);
-      throw new HttpException(
-        error.message,
-        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to fetch aging report', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
   @Get('customer-payments')
-  async getCustomerPayments(
+  async getCustomerPaymentsFromLedger(
     @Query('customerNumber') customerNumber: string,
+    @Query('endDate') endDate: string,
   ) {
-    return this.financialDashboardService.getCustomerPayments(customerNumber);
+    try {
+      return await this.financialDashboardService.getCustomerPaymentsFromLedger(customerNumber, endDate);
+    } catch (error) {
+      this.logger.error(`Error fetching customer payments: ${error.message}`);
+      throw new HttpException('Failed to fetch customer payments', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
 
   @Get('invoice-details')
   async getInvoiceDetails(@Query('invoiceNumber') invoiceNumber: string) {
-    if (!invoiceNumber) {
-      throw new HttpException('invoiceNumber is required', HttpStatus.BAD_REQUEST);
-    }
-
     try {
-      const data = await this.financialDashboardService.getInvoiceDetails(invoiceNumber);
-      return data;
+      return await this.financialDashboardService.getInvoiceDetails(invoiceNumber);
     } catch (error) {
       this.logger.error(`Error fetching invoice details: ${error.message}`);
+      throw new HttpException('Failed to fetch invoice details', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  @Get('dso')
+  async getDSO(@Query('startDate') startDate: string, @Query('endDate') endDate: string) {
+    try {
+      const dsoMetrics = await this.financialDashboardService.getDSOMetrics(startDate, endDate);
+      const averageDSO = dsoMetrics.length > 0 ? dsoMetrics.reduce((sum, metric) => sum + metric.daysOutstanding, 0) / dsoMetrics.length : 0;
+      return { dso: averageDSO };
+    } catch (error) {
+      this.logger.error(`Error fetching DSO: ${error.message}`);
+      throw new HttpException('Failed to fetch DSO', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  @Post('invoice-details/bulk')
+  async getInvoicesDetailsBulk(@Body('invoiceNumbers') invoiceNumbers: string[]) {
+    try {
+      return await this.financialDashboardService.getInvoicesByNumbers(invoiceNumbers);
+    } catch (error) {
+      this.logger.error(`Error fetching bulk invoice details: ${error.message}`);
+      throw new HttpException('Failed to fetch invoice details', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  @Get('payments')
+  async getPayments(
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
+    if (!startDate || !endDate) {
+      throw new HttpException('startDate and endDate are required', HttpStatus.BAD_REQUEST);
+    }
+  
+    this.logger.debug(`Received request for payments from ${startDate} to ${endDate}`);
+  
+    try {
+      // Correct method call
+      const data = await this.financialDashboardService.getCustomerPaymentsFromLedger(startDate, endDate);
+      return data;
+    } catch (error) {
+      this.logger.error(`Error fetching payments: ${error.message}`);
       throw new HttpException(
-        error.message,
-        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+        'Failed to fetch payments',
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
+
+  @Get('customer-payment-history')
+  async getCustomerPaymentHistory(
+    @Query('customerNumber') customerNumber: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    // Set default date range if not provided (e.g., last 6 months)
+    const today = new Date();
+    const defaultStartDate = new Date();
+    defaultStartDate.setMonth(today.getMonth() - 6);
+
+    const startDateParam = startDate || defaultStartDate.toISOString().split('T')[0];
+    const endDateParam = endDate || today.toISOString().split('T')[0];
+
+    return this.financialDashboardService.getCustomerPaymentHistory(customerNumber, startDateParam, endDateParam);
+  }
+
+  @Get('top-late-customers')
+  async getTopLateCustomers(@Query('asOfDate') asOfDate: string) {
+    return this.financialDashboardService.getTopLateCustomers(asOfDate);
+  }
+  
 }
 

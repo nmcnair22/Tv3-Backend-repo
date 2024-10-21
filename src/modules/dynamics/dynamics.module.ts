@@ -6,6 +6,7 @@ import { ConfigModule } from '@nestjs/config';
 import { DynamicsAccountService } from './dynamics-account.service';
 import { DynamicsAuthService } from './dynamics-auth.service';
 import { DynamicsBaseService } from './dynamics-base.service';
+import { DynamicsCreditService } from './dynamics-credit.service';
 import { DynamicsGlEntryService } from './dynamics-glentry.service';
 import { DynamicsInvoiceService } from './dynamics-invoice.service';
 import { DynamicsItemService } from './dynamics-item.service';
@@ -20,6 +21,7 @@ import { DynamicsReportsService } from './dynamics-reports.service';
   providers: [
     DynamicsAuthService,
     DynamicsBaseService,
+    DynamicsCreditService,
     DynamicsReportsService,
     DynamicsInvoiceService,
     DynamicsPaymentService,
@@ -28,10 +30,12 @@ import { DynamicsReportsService } from './dynamics-reports.service';
     DynamicsGlEntryService,
   ],
   exports: [
+    DynamicsAuthService,
     DynamicsReportsService,
     DynamicsInvoiceService,
     DynamicsPaymentService,
     DynamicsItemService,
+    DynamicsCreditService,
     DynamicsAccountService,
     DynamicsGlEntryService,
   ],

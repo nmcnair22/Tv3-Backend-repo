@@ -1,7 +1,6 @@
 // src/common/types/aged-receivables.types.ts
 
 export interface AgedReceivableItem {
-    '@odata.etag': string;
     customerId: string;
     customerNumber: string;
     name: string;
