@@ -6,10 +6,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 // Entity imports
+import { Account } from './entities/account.entity';
+import { BankAccount } from './entities/bank-account.entity';
+import { BillingScheduleLine } from './entities/billing-schedule-line.entity';
 import { CustomerLedgerEntry } from './entities/customer-ledger-entry.entity';
 import { Customer } from './entities/customer.entity';
 import { GeneralLedgerEntry } from './entities/general-ledger-entry.entity';
 import { Item } from './entities/item.entity';
+import { Job } from './entities/job.entity';
 import { PurchaseCreditMemoLine } from './entities/purchase-credit-memo-line.entity';
 import { PurchaseCreditMemo } from './entities/purchase-credit-memo.entity';
 import { PurchaseInvoiceLine } from './entities/purchase-invoice-line.entity';
@@ -20,6 +24,7 @@ import { SalesCreditMemoLine } from './entities/sales-credit-memo-line.entity';
 import { SalesCreditMemo } from './entities/sales-credit-memo.entity';
 import { SalesInvoiceLine } from './entities/sales-invoice-line.entity';
 import { SalesInvoice } from './entities/sales-invoice.entity';
+import { ShipToAddress } from './entities/ship-to-address.entity';
 import { SyncStatus } from './entities/sync-status.entity';
 import { Vendor } from './entities/vendor.entity';
 
@@ -84,6 +89,22 @@ export class SyncService {
 
     @InjectRepository(SyncStatus)
     private readonly syncStatusRepository: Repository<SyncStatus>,
+
+    @InjectRepository(Account)
+    private readonly accountRepository: Repository<Account>,
+
+    @InjectRepository(BankAccount)
+    private readonly bankAccountRepository: Repository<BankAccount>,
+
+    @InjectRepository(ShipToAddress)
+    private readonly shipToAddressRepository: Repository<ShipToAddress>,
+
+    @InjectRepository(Job)
+    private readonly jobRepository: Repository<Job>,
+
+    @InjectRepository(BillingScheduleLine)
+    private readonly billingScheduleLineRepository: Repository<BillingScheduleLine>,
+
   ) {}
 
 /**
@@ -110,6 +131,11 @@ export class SyncService {
       await this.syncPurchaseCreditMemos();
       await this.syncGeneralLedgerEntries();
       await this.syncCustomerLedgerEntries();
+      await this.syncBankAccounts();
+      await this.syncAccounts();
+      await this.syncShipToAddresses();
+      await this.syncJobs();
+      await this.syncBillingScheduleLines();
       this.logger.debug('Synchronization completed successfully.');
     } catch (error) {
       this.logger.error('Synchronization failed', error.stack);
@@ -1191,6 +1217,233 @@ async syncCustomerLedgerEntries() {
     }
     await this.syncStatusRepository.save(syncStatus);
   }
+
+   // ----------------------------------
+  // Synchronization Accounts
+  // ----------------------------------
+  async syncAccounts() {
+    this.logger.debug('Synchronizing accounts...');
+    const entityName = 'accounts';
+    try {
+      const lastSync = await this.getLastSyncTimestamp(entityName);
+      const accounts = await this.v2ApiService.getAccounts(lastSync);
+      this.logger.debug(`Fetched ${accounts.length} accounts from V2 API`);
+  
+      for (const accountData of accounts) {
+        const accountEntity = this.transformV2Account(accountData);
+        await this.accountRepository.save(accountEntity);
+      }
+  
+      await this.updateLastSyncTimestamp(entityName);
+    } catch (error) {
+      this.logger.error('Error during accounts synchronization', error.stack);
+      throw error;
+    }
+  }
+  
+  // Transformation method
+  private transformV2Account(data: any): Account {
+    return this.accountRepository.create({
+      id: data.id,
+      number: data.number,
+      displayName: data.displayName,
+      category: data.category,
+      subCategory: data.subCategory || null,
+      blocked: data.blocked,
+      accountType: data.accountType,
+      directPosting: data.directPosting,
+      netChange: data.netChange,
+      consolidationTranslationMethod: data.consolidationTranslationMethod || null,
+      consolidationDebitAccount: data.consolidationDebitAccount || null,
+      consolidationCreditAccount: data.consolidationCreditAccount || null,
+      excludeFromConsolidation: data.excludeFromConsolidation,
+      lastModified: new Date(data.lastModifiedDateTime),
+      apiSource: 'v2.0',
+    });
+  }
+
+   // ----------------------------------
+  // Synchronization Bank Accounts
+  // ----------------------------------
+  async syncBankAccounts() {
+    this.logger.debug('Synchronizing bank accounts...');
+    const entityName = 'bank_accounts';
+    try {
+      const lastSync = await this.getLastSyncTimestamp(entityName);
+      const bankAccounts = await this.v2ApiService.getBankAccounts(lastSync);
+      this.logger.debug(`Fetched ${bankAccounts.length} bank accounts from V2 API`);
+  
+      for (const bankAccountData of bankAccounts) {
+        const bankAccountEntity = this.transformV2BankAccount(bankAccountData);
+        await this.bankAccountRepository.save(bankAccountEntity);
+      }
+  
+      await this.updateLastSyncTimestamp(entityName);
+    } catch (error) {
+      this.logger.error('Error during bank accounts synchronization', error.stack);
+      throw error;
+    }
+  }
+  
+  // Transformation method
+  private transformV2BankAccount(data: any): BankAccount {
+    return this.bankAccountRepository.create({
+      id: data.id,
+      number: data.number,
+      displayName: data.displayName,
+      bankAccountNumber: data.bankAccountNumber || null,
+      blocked: data.blocked,
+      currencyCode: data.currencyCode || null,
+      currencyId: data.currencyId !== '00000000-0000-0000-0000-000000000000' ? data.currencyId : null,
+      iban: data.iban || null,
+      intercompanyEnabled: data.intercompanyEnabled,
+      lastModified: new Date(data.lastModifiedDateTime),
+      apiSource: 'v2.0',
+    });
+  }
+
+
+// ----------------------------------
+// Ship-to Address Synchronization
+// ----------------------------------
+async syncShipToAddresses() {
+  this.logger.debug('Synchronizing ship-to addresses...');
+  const entityName = 'ship_to_addresses';
+  try {
+    const lastSync = await this.getLastSyncTimestamp(entityName);
+
+    const shipToAddresses = await this.tmcApiService.getShipToAddresses(lastSync);
+    this.logger.debug(`Fetched ${shipToAddresses.length} ship-to addresses from TMC API`);
+
+    for (const data of shipToAddresses) {
+      const shipToEntity = this.transformShipToAddress(data);
+      await this.shipToAddressRepository.save(shipToEntity);
+    }
+
+    await this.updateLastSyncTimestamp(entityName);
+  } catch (error) {
+    this.logger.error('Error during ship-to address synchronization', error.stack);
+    throw error;
+  }
+}
+
+private transformShipToAddress(data: any): ShipToAddress {
+  return this.shipToAddressRepository.create({
+    systemId: data.systemId,
+    customerNo: data.customerNo,
+    code: data.code,
+    name: data.name,
+    name2: data.name2 || null,
+    address: data.address || null,
+    address2: data.address2 || null,
+    postCode: data.postCode || null,
+    city: data.city || null,
+    state: data.state || null,
+    countryRegionCode: data.countryRegionCode || null,
+    email: data.eMail || null,
+    phoneNo: data.phoneNo || null,
+    faxNo: data.faxNo || null,
+    contact: data.contact || null,
+    gln: data.gln || null,
+    cissdmCrossReferenceCode: data.cissdmCrossReferenceCode || null,
+    cissdmCustomerCostCenterCode: data.cissdmCustomerCostCenterCode || null,
+    systemCreatedAt: new Date(data.SystemCreatedAt),
+    lastModifiedDateTime: new Date(data.lastModifiedDateTime),
+    apiSource: 'tmc',
+  });
+}
+
+// ----------------------------------
+// Job Synchronization
+// ----------------------------------
+async syncJobs() {
+  this.logger.debug('Synchronizing jobs...');
+  const entityName = 'jobs';
+  try {
+    const lastSync = await this.getLastSyncTimestamp(entityName);
+
+    const jobs = await this.tmcApiService.getJobs(lastSync);
+    this.logger.debug(`Fetched ${jobs.length} jobs from TMC API`);
+
+    for (const data of jobs) {
+      const jobEntity = this.transformJob(data);
+      await this.jobRepository.save(jobEntity);
+    }
+
+    await this.updateLastSyncTimestamp(entityName);
+  } catch (error) {
+    this.logger.error('Error during job synchronization', error.stack);
+    throw error;
+  }
+}
+
+private transformJob(data: any): Job {
+  return this.jobRepository.create({
+    systemId: data.systemId,
+    no: data.no,
+    description: data.description,
+    billToCustomerNo: data.billToCustomerNo,
+    status: data.status,
+    personResponsible: data.personResponsible || null,
+    nextInvoiceDate:
+      data.nextInvoiceDate && data.nextInvoiceDate !== '0001-01-01'
+        ? new Date(data.nextInvoiceDate)
+        : null,
+    jobPostingGroup: data.jobPostingGroup,
+    searchDescription: data.searchDescription || null,
+    systemCreatedAt: new Date(data.SystemCreatedAt),
+    lastModifiedDateTime: new Date(data.lastModifiedDateTime),
+    apiSource: 'tmc',
+  });
+}
+
+// ----------------------------------
+// Billing Schedule Line Synchronization
+// ----------------------------------
+async syncBillingScheduleLines() {
+  this.logger.debug('Synchronizing billing schedule lines...');
+  const entityName = 'billing_schedule_lines';
+  try {
+    // Since we can't use lastSync, we skip retrieving it
+    // const lastSync = await this.getLastSyncTimestamp(entityName);
+
+    // Fetch all billing schedule lines
+    const billingScheduleLines = await this.tmcApiService.getBillingScheduleLines();
+    this.logger.debug(
+      `Fetched ${billingScheduleLines.length} billing schedule lines from TMC API`
+    );
+
+    // Optional: Clear existing data to avoid duplicates or outdated records
+    await this.billingScheduleLineRepository.clear();
+    this.logger.debug('Cleared existing billing schedule lines from database');
+
+    for (const data of billingScheduleLines) {
+      const billingLineEntity = this.transformBillingScheduleLine(data);
+      await this.billingScheduleLineRepository.save(billingLineEntity);
+    }
+
+    // Update the synchronization timestamp (optional, may not be useful here)
+    // await this.updateLastSyncTimestamp(entityName);
+  } catch (error) {
+    this.logger.error('Error during billing schedule line synchronization', error.stack);
+    throw error;
+  }
+}
+
+private transformBillingScheduleLine(data: any): BillingScheduleLine {
+  return this.billingScheduleLineRepository.create({
+    billingScheduleNumber: data.BssiArcbBillingScheduleNumber,
+    lineNo: data.LineNo,
+    type: data.Type_,
+    itemNo: data.ItemNo || null,
+    description: data.Description,
+    billingType: data.BillingType,
+    // Map other fields as needed
+    shipToCode: data.ShiptoCode || null,
+    apiSource: 'tmc',
+  });
+}
+
 }
 
 

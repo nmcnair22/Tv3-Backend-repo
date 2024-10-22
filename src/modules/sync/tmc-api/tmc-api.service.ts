@@ -85,6 +85,42 @@ export class TmcApiService {
     return await this.getRequest(url, params);
   }
 
+/**
+ * Fetch ship-to addresses from the TMC API with optional last sync date for incremental sync.
+ */
+async getShipToAddresses(lastSyncDateTime?: Date): Promise<any[]> {
+  const url = `${this.baseUrl()}/shipToAddresses`;
+  const params: any = {};
+  if (lastSyncDateTime) {
+    params['$filter'] = `lastModifiedDateTime gt ${lastSyncDateTime.toISOString()}`;
+  }
+  return await this.getRequest(url, params);
+}
 
-  // Add more methods as needed to fetch other data from the TMC API
+/**
+ * Fetch jobs from the TMC API with optional last sync date for incremental sync.
+ */
+async getJobs(lastSyncDateTime?: Date): Promise<any[]> {
+  const url = `${this.baseUrl()}/jobs`;
+  const params: any = {};
+  if (lastSyncDateTime) {
+    params['$filter'] = `lastModifiedDateTime gt ${lastSyncDateTime.toISOString()}`;
+  }
+  return await this.getRequest(url, params);
+}
+
+/**
+ * Fetch billing schedule lines from the TMC API.
+ * Since there is no lastModifiedDateTime, we fetch all records.
+ */
+async getBillingScheduleLines(): Promise<any[]> {
+  const url = `${this.baseUrl()}/bssiArcbBillingScheduleLines`;
+  const params: any = {
+    // You can include a $select parameter if you want to limit the fields
+    // '$select': '...', // Include fields if needed
+  };
+  // Remove the $filter parameter since lastModifiedDateTime doesn't exist
+  return await this.getRequest(url, params);
+}
+
 }

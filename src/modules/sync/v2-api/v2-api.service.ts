@@ -249,4 +249,33 @@ async getPurchaseCreditMemoLines(creditMemoId: string): Promise<any[]> {
     };
     return await this.getRequest(url, params);
   }
+
+  /**
+ * Fetch accounts from the API with optional last sync date for incremental sync.
+ */
+async getAccounts(lastSyncDateTime?: Date): Promise<any[]> {
+  const url = `${this.baseUrl()}/accounts`;
+  const params: any = {
+    '$select': 'id,number,displayName,category,subCategory,blocked,accountType,directPosting,netChange,consolidationTranslationMethod,consolidationDebitAccount,consolidationCreditAccount,excludeFromConsolidation,lastModifiedDateTime',
+  };
+  if (lastSyncDateTime) {
+    params['$filter'] = `lastModifiedDateTime gt ${lastSyncDateTime.toISOString()}`;
+  }
+  return await this.getRequest(url, params);
+}
+
+/**
+ * Fetch bank accounts from the API with optional last sync date for incremental sync.
+ */
+async getBankAccounts(lastSyncDateTime?: Date): Promise<any[]> {
+  const url = `${this.baseUrl()}/bankAccounts`;
+  const params: any = {
+    '$select': 'id,number,displayName,bankAccountNumber,blocked,currencyCode,currencyId,iban,intercompanyEnabled,lastModifiedDateTime',
+  };
+  if (lastSyncDateTime) {
+    params['$filter'] = `lastModifiedDateTime gt ${lastSyncDateTime.toISOString()}`;
+  }
+  return await this.getRequest(url, params);
+}
+
 }
