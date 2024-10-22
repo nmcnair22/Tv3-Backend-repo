@@ -1402,11 +1402,7 @@ private transformJob(data: any): Job {
 // ----------------------------------
 async syncBillingScheduleLines() {
   this.logger.debug('Synchronizing billing schedule lines...');
-  const entityName = 'billing_schedule_lines';
   try {
-    // Since we can't use lastSync, we skip retrieving it
-    // const lastSync = await this.getLastSyncTimestamp(entityName);
-
     // Fetch all billing schedule lines
     const billingScheduleLines = await this.tmcApiService.getBillingScheduleLines();
     this.logger.debug(
@@ -1422,8 +1418,7 @@ async syncBillingScheduleLines() {
       await this.billingScheduleLineRepository.save(billingLineEntity);
     }
 
-    // Update the synchronization timestamp (optional, may not be useful here)
-    // await this.updateLastSyncTimestamp(entityName);
+    // Since we're not using lastSync or updating timestamps, entityName is not needed
   } catch (error) {
     this.logger.error('Error during billing schedule line synchronization', error.stack);
     throw error;

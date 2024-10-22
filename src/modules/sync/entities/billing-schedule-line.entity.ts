@@ -28,13 +28,12 @@ import {
     @Column({ name: 'billing_type', type: 'varchar', length: 50 })
     billingType: string;
   
-    // Add other fields as needed...
-  
     @Column({ name: 'ship_to_code', type: 'varchar', length: 50, nullable: true })
     shipToCode?: string;
   
-    @Column({ name: 'last_modified_date_time', type: 'datetime' })
-    lastModifiedDateTime: Date;
+    // Modify the field to be nullable
+    @Column({ name: 'last_modified_date_time', type: 'datetime', nullable: true })
+    lastModifiedDateTime?: Date;
   
     @Column({ name: 'api_source', type: 'varchar', length: 10 })
     apiSource: string;
