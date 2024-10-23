@@ -29,15 +29,16 @@ export class DynamicsAccountService extends DynamicsBaseService {
       this.logger.debug(`Fetched ${accounts.length} income accounts`);
       return accounts;
     } catch (error) {
+    const err = error as any;
       this.logger.error('Failed to fetch income accounts', error);
-      if (error.response) {
+      if (err.response) {
         this.logger.error(
-          `Error response data: ${JSON.stringify(error.response.data)}`,
+          `Error response data: ${JSON.stringify(err.response.data)}`,
         );
       }
       throw new HttpException(
         'Failed to fetch income accounts',
-        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+        err.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
@@ -63,6 +64,7 @@ export class DynamicsAccountService extends DynamicsBaseService {
 
       return accountToCategoryMap;
     } catch (error) {
+    const err = error as any;
       this.logger.error('Failed to fetch income accounts', error);
       throw new HttpException('Failed to fetch income accounts', HttpStatus.INTERNAL_SERVER_ERROR);
     }

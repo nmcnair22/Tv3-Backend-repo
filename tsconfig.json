@@ -1,21 +1,24 @@
 {
   "compilerOptions": {
     "module": "commonjs",
+    "moduleResolution": "node", // Added moduleResolution
     "declaration": true,
     "removeComments": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
-    "target": "ES2021",
+    "target": "ES2021", // Adjust if necessary based on Node.js version
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
-    "strictNullChecks": false,
-    "noImplicitAny": false,
-    "strictBindCallApply": false,
-    "forceConsistentCasingInFileNames": false,
-    "noFallthroughCasesInSwitch": false
-  }
+    // Consider enabling stricter type checking:
+    "strict": false,
+    "noImplicitAny": false, // If you prefer, you can set individual options
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src/**/*"], // Added include
+  "exclude": ["node_modules"] // Added exclude
 }

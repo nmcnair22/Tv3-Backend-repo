@@ -169,7 +169,8 @@ async getInflowsData(startDate: string, endDate: string): Promise<{
 
       return agedReceivables;
     } catch (error) {
-      this.logger.error(`Error fetching aging report: ${error.message}`);
+    const err = error as any;
+      this.logger.error(`Error fetching aging report: ${err.message}`);
       throw new HttpException('Failed to fetch aging report', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
@@ -201,7 +202,8 @@ async getInflowsData(startDate: string, endDate: string): Promise<{
 
     return paymentHistory;
   } catch (error) {
-    this.logger.error(`Error fetching payment history for customer ${customerNumber}: ${error.message}`);
+    const err = error as any;
+    this.logger.error(`Error fetching payment history for customer ${customerNumber}: ${err.message}`);
     throw new HttpException('Failed to fetch payment history', HttpStatus.INTERNAL_SERVER_ERROR);
   }
 }
@@ -229,7 +231,8 @@ async getInflowsData(startDate: string, endDate: string): Promise<{
         return 0;
       }
     } catch (error) {
-      this.logger.error(`Error fetching receivables for date ${date}: ${error.message}`);
+    const err = error as any;
+      this.logger.error(`Error fetching receivables for date ${date}: ${err.message}`);
       throw error;
     }
   }
@@ -249,7 +252,8 @@ async getInflowsData(startDate: string, endDate: string): Promise<{
       const invoiceLines = await this.dynamicsInvoiceService.getInvoiceLinesByInvoiceId(invoice.id);
       return { invoice, invoiceLines };
     } catch (error) {
-      this.logger.error(`Error fetching invoice details: ${error.message}`);
+    const err = error as any;
+      this.logger.error(`Error fetching invoice details: ${err.message}`);
       throw error;
     }
   }
@@ -295,7 +299,8 @@ async getTotalCredits(startDate: string, endDate: string): Promise<number> {
     this.logger.debug(`Total credits calculated: ${totalCredits}`);
     return totalCredits;
   } catch (error) {
-    this.logger.error(`Error fetching total credits: ${error.message}`);
+    const err = error as any;
+    this.logger.error(`Error fetching total credits: ${err.message}`);
     throw new HttpException('Failed to fetch total credits', HttpStatus.INTERNAL_SERVER_ERROR);
   }
 }

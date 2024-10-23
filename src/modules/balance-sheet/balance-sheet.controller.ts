@@ -17,10 +17,11 @@ export class BalanceSheetController {
       }
       return await this.balanceSheetService.getBalanceSheet(date);
     } catch (error) {
+    const err = error as any;
       this.logger.error('Error fetching balance sheet', error);
       throw new HttpException(
         'Error fetching balance sheet',
-        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+        err.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }

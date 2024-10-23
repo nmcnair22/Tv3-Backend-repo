@@ -20,6 +20,7 @@ export class CashFlowService {
       );
       return cashFlowStatements;
     } catch (error) {
+    const err = error as any;
       this.logger.error('Error fetching cash flow statements', error);
       throw error;
     }

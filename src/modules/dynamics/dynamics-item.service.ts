@@ -44,13 +44,14 @@ export class DynamicsItemService extends DynamicsBaseService {
       this.logger.debug(`Fetched ${items.length} items successfully`);
       return items;
     } catch (error) {
+    const err = error as any;
       this.logger.error('Failed to fetch items', error);
-      if (error.response) {
-        this.logger.error(`Error response data: ${JSON.stringify(error.response.data)}`);
+      if (err.response) {
+        this.logger.error(`Error response data: ${JSON.stringify(err.response.data)}`);
       }
       throw new HttpException(
         'Failed to fetch items',
-        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+        err.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }

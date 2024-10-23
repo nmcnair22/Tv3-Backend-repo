@@ -22,8 +22,17 @@ export class SyncController {
       await this.syncService.syncAll();
       return { message: 'Synchronization completed successfully' };
     } catch (error) {
-      this.logger.error('Manual synchronization failed', error.stack);
-      return { message: 'Synchronization failed', error: error.message };
+    const err = error as any;
+      this.logger.error('Manual synchronization failed', err.stack);
+      return { message: 'Synchronization failed', error: err.message };
     }
   }
+
+  @Post('full-sync')
+  async manualFullSync() {
+    this.logger.debug('Manual full synchronization triggered');
+    await this.syncService.syncAll(true);
+    return { message: 'Full synchronization completed' };
+  }
+
 }

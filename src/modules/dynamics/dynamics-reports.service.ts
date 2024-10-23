@@ -57,15 +57,16 @@ export class DynamicsReportsService extends DynamicsBaseService {
       this.logger.debug(`Income statements data fetched successfully`);
       return response.data;
     } catch (error) {
-      this.logger.error(`Failed to fetch income statements: ${error.message}`);
-      if (error.response) {
+    const err = error as any;
+      this.logger.error(`Failed to fetch income statements: ${err.message}`);
+      if (err.response) {
         this.logger.error(
-          `Error response data: ${JSON.stringify(error.response.data)}`,
+          `Error response data: ${JSON.stringify(err.response.data)}`,
         );
       }
       throw new HttpException(
         'Failed to fetch income statements',
-        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+        err.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
@@ -106,15 +107,16 @@ export class DynamicsReportsService extends DynamicsBaseService {
       this.logger.debug(`Cash flow statements data fetched successfully`);
       return response.data;
     } catch (error) {
-      this.logger.error(`Failed to fetch cash flow statements: ${error.message}`);
-      if (error.response) {
+    const err = error as any;
+      this.logger.error(`Failed to fetch cash flow statements: ${err.message}`);
+      if (err.response) {
         this.logger.error(
-          `Error response data: ${JSON.stringify(error.response.data)}`,
+          `Error response data: ${JSON.stringify(err.response.data)}`,
         );
       }
       throw new HttpException(
         'Failed to fetch cash flow statements',
-        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+        err.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
@@ -149,15 +151,16 @@ export class DynamicsReportsService extends DynamicsBaseService {
       this.logger.debug(`Balance sheet statements data fetched successfully`);
       return response.data;
     } catch (error) {
-      this.logger.error(`Failed to fetch balance sheet statements: ${error.message}`);
-      if (error.response) {
+    const err = error as any;
+      this.logger.error(`Failed to fetch balance sheet statements: ${err.message}`);
+      if (err.response) {
         this.logger.error(
-          `Error response data: ${JSON.stringify(error.response.data)}`,
+          `Error response data: ${JSON.stringify(err.response.data)}`,
         );
       }
       throw new HttpException(
         'Failed to fetch balance sheet statements',
-        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+        err.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
@@ -188,13 +191,14 @@ export class DynamicsReportsService extends DynamicsBaseService {
       this.logger.debug(`Aged receivables data fetched successfully`);
       return response.data.value;
     } catch (error) {
-      this.logger.error(`Failed to fetch aged receivables: ${error.message}`);
-      if (error.response && error.response.data) {
-        this.logger.error(`Error response data: ${JSON.stringify(error.response.data)}`);
+    const err = error as any;
+      this.logger.error(`Failed to fetch aged receivables: ${err.message}`);
+      if (err.response && err.response.data) {
+        this.logger.error(`Error response data: ${JSON.stringify(err.response.data)}`);
       }
       throw new HttpException(
         'Failed to fetch aged receivables',
-        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+        err.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }

@@ -3,7 +3,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 
 // Entity imports
 import { Account } from './entities/account.entity';
@@ -108,74 +108,96 @@ export class SyncService {
   ) {}
 
 /**
-   * Scheduled Cron Job to Synchronize Data
+ * Scheduled Cron Job to Synchronize Data
+ * Runs every hour at minute 0
+ */
+@Cron('0 * * * *')
+async handleCron() {
+  this.logger.debug('Starting scheduled synchronization...');
+  await this.syncAll();
+}
+
+  /**
+   * Scheduled Cron Job for Full Synchronization
+   * Runs at 3 AM every Sunday
    */
-  @Cron('0 22 * * *')
-  async handleCron() {
-    this.logger.debug('Starting scheduled synchronization...');
-    await this.syncAll();
+  @Cron('0 3 * * 0')
+  async handleWeeklyFullSync() {
+    this.logger.debug('Starting scheduled full synchronization...');
+    await this.syncAll(true);
   }
+
 
   /**
    * Synchronize All Data
    */
-  async syncAll() {
+  async syncAll(fullSync: boolean = false) {
     try {
-      await this.syncCustomers();
-      await this.syncVendors();
-      await this.syncItems();
-      await this.syncSalesInvoices();
-      await this.syncSalesCreditMemos();
-      await this.syncPurchaseInvoices();
-      await this.syncPurchaseOrders();
-      await this.syncPurchaseCreditMemos();
-      await this.syncGeneralLedgerEntries();
-      await this.syncCustomerLedgerEntries();
-      await this.syncBankAccounts();
-      await this.syncAccounts();
-      await this.syncShipToAddresses();
-      await this.syncJobs();
-      await this.syncBillingScheduleLines();
+      await this.syncCustomers(fullSync);
+      await this.syncVendors(fullSync);
+      await this.syncItems(fullSync);
+      await this.syncSalesInvoices(fullSync);
+      await this.syncSalesCreditMemos(fullSync);
+      await this.syncPurchaseInvoices(fullSync);
+      await this.syncPurchaseOrders(fullSync);
+      await this.syncPurchaseCreditMemos(fullSync);
+      await this.syncGeneralLedgerEntries(fullSync);
+      await this.syncCustomerLedgerEntries(fullSync);
+      // Include any other sync methods, passing fullSync
+      await this.syncAccounts(fullSync);
+      await this.syncBankAccounts(fullSync);
+      await this.syncShipToAddresses(fullSync);
+      await this.syncJobs(fullSync);
+      // Note: For syncBillingScheduleLines, which always performs a full sync
+      await this.syncBillingScheduleLines(); // No need to pass fullSync
+  
       this.logger.debug('Synchronization completed successfully.');
     } catch (error) {
-      this.logger.error('Synchronization failed', error.stack);
+    const err = error as any;
+      this.logger.error('Synchronization failed', err.stack);
     }
   }
 
   // ----------------------------------
   // Customer Synchronization
   // ----------------------------------
-  async syncCustomers() {
-    this.logger.debug('Synchronizing customers...');
+  async syncCustomers(fullSync: boolean = false) {
+    this.logger.debug(`Synchronizing customers (fullSync=${fullSync})...`);
     const entityName = 'customers';
     try {
-      const lastSync = await this.getLastSyncTimestamp(entityName);
-
+      const lastSync = fullSync ? null : await this.getLastSyncTimestamp(entityName);
+  
       // Sync customers from V2 API
       const v2Customers = await this.v2ApiService.getCustomers(lastSync);
       this.logger.debug(`Fetched ${v2Customers.length} customers from V2 API`);
+      const dynamicsIds = new Set();
+  
       for (const v2Customer of v2Customers) {
         const customerEntity = this.transformV2Customer(v2Customer);
         await this.customerRepository.save(customerEntity);
+        dynamicsIds.add(customerEntity.id);
         this.logger.debug(`Saved customer ${customerEntity.customerNumber} to database`);
       }
-
-      // Sync customers from TMC API
-      const tmcCustomers = await this.tmcApiService.getTmcCustomers(lastSync);
-      if (!tmcCustomers || !Array.isArray(tmcCustomers)) {
-        this.logger.error('TMC Customers data is undefined or not an array');
-        throw new Error('Invalid data format from TMC API');
+  
+      // Remove the TMC Customers synchronization section
+  
+      // Optional: Handle deletions during full sync
+      if (fullSync) {
+        const localCustomers = await this.customerRepository.find({ select: ['id'] });
+        const localIds = localCustomers.map(c => c.id);
+  
+        const idsToDelete = localIds.filter(id => !dynamicsIds.has(id));
+  
+        if (idsToDelete.length > 0) {
+          await this.customerRepository.delete(idsToDelete);
+          this.logger.debug(`Deleted ${idsToDelete.length} customers not present in Dynamics`);
+        }
       }
-      this.logger.debug(`Fetched ${tmcCustomers.length} customers from TMC API`);
-      for (const tmcCustomer of tmcCustomers) {
-        const customerEntity = this.transformTmcCustomer(tmcCustomer);
-        await this.customerRepository.save(customerEntity);
-        this.logger.debug(`Saved customer ${customerEntity.customerNumber} from TMC API to database`);
-      }
-
+  
       await this.updateLastSyncTimestamp(entityName);
     } catch (error) {
-      this.logger.error('Error during customer synchronization', error.stack);
+      const err = error as any;
+      this.logger.error('Error during customer synchronization', err.stack);
       throw error;
     }
   }
@@ -204,38 +226,14 @@ export class SyncService {
     });
   }
 
-  private transformTmcCustomer(data: any): Customer {
-    return this.customerRepository.create({
-      id: data.systemId,
-      customerNumber: data.no,
-      displayName: data.name,
-      additionalName: data.additionalName || null,
-      addressLine1: data.addressLine1 || null,
-      addressLine2: data.addressLine2 || null,
-      city: data.city || null,
-      state: data.state || null,
-      postalCode: data.postCode || null,
-      country: data.country || null,
-      phoneNumber: data.phoneNo || null,
-      email: data.email || null,
-      website: data.homePage || null,
-      balanceDue: data.balanceDue || 0,
-      creditLimit: data.creditLimit || 0,
-      taxRegistrationNumber: data.taxRegistrationNo || null,
-      currencyCode: data.currencyCode || null,
-      lastModified: new Date(data.lastModifiedDateTime),
-      apiSource: 'TMC',
-    });
-  }
-
 // ----------------------------------
 // Vendor Synchronization
 // ----------------------------------
-async syncVendors() {
-  this.logger.debug('Synchronizing vendors...');
+async syncVendors(fullSync: boolean = false) {
+  this.logger.debug(`Synchronizing vendors (fullSync=${fullSync})...`);
   const entityName = 'vendors';
   try {
-    const lastSync = await this.getLastSyncTimestamp(entityName);
+    const lastSync = fullSync ? null : await this.getLastSyncTimestamp(entityName);
 
     const v2Vendors = await this.v2ApiService.getVendors(lastSync);
     this.logger.debug(`Fetched ${v2Vendors.length} vendors from V2 API`);
@@ -246,9 +244,24 @@ async syncVendors() {
       this.logger.debug(`Saved vendor ${vendorEntity.vendorNumber} to database`);
     }
 
+    // Optional: Handle deletions during full sync
+    if (fullSync) {
+      const dynamicsIds = v2Vendors.map(v => v.id);
+      const localVendors = await this.vendorRepository.find({ select: ['id'] });
+      const localIds = localVendors.map(v => v.id);
+
+      const idsToDelete = localIds.filter(id => !dynamicsIds.includes(id));
+
+      if (idsToDelete.length > 0) {
+        await this.vendorRepository.delete(idsToDelete);
+        this.logger.debug(`Deleted ${idsToDelete.length} vendors not present in Dynamics`);
+      }
+    }
+
     await this.updateLastSyncTimestamp(entityName);
   } catch (error) {
-    this.logger.error('Error during vendor synchronization', error.stack);
+    const err = error as any;
+    this.logger.error('Error during vendor synchronization', err.stack);
     throw error;
   }
 }
@@ -289,11 +302,11 @@ private transformV2Vendor(data: any): Vendor {
 // ----------------------------------
 // Item Synchronization
 // ----------------------------------
-async syncItems() {
-  this.logger.debug('Synchronizing items...');
+async syncItems(fullSync: boolean = false) {
+  this.logger.debug(`Synchronizing items (fullSync=${fullSync})...`);
   const entityName = 'items';
   try {
-    const lastSync = await this.getLastSyncTimestamp(entityName);
+    const lastSync = fullSync ? null : await this.getLastSyncTimestamp(entityName);
 
     const v2Items = await this.v2ApiService.getItems(lastSync);
     this.logger.debug(`Fetched ${v2Items.length} items from V2 API`);
@@ -304,13 +317,24 @@ async syncItems() {
       this.logger.debug(`Saved item ${itemEntity.itemNo} to database`);
     }
 
-    // If you have TMC item synchronization, include it here
-    // const tmcItems = await this.tmcApiService.getItems(lastSync);
-    // ... process TMC items ...
+    // Optional: Handle deletions during full sync
+    if (fullSync) {
+      const dynamicsIds = v2Items.map(item => item.id);
+      const localItems = await this.itemRepository.find({ select: ['id'] });
+      const localIds = localItems.map(item => item.id);
+
+      const idsToDelete = localIds.filter(id => !dynamicsIds.includes(id));
+
+      if (idsToDelete.length > 0) {
+        await this.itemRepository.delete(idsToDelete);
+        this.logger.debug(`Deleted ${idsToDelete.length} items not present in Dynamics`);
+      }
+    }
 
     await this.updateLastSyncTimestamp(entityName);
   } catch (error) {
-    this.logger.error('Error during item synchronization', error.stack);
+    const err = error as any;
+    this.logger.error('Error during item synchronization', err.stack);
     throw error;
   }
 }
@@ -361,11 +385,11 @@ private transformV2Item(data: any): Item {
 // ----------------------------------
 // Sales Invoice Synchronization
 // ----------------------------------
-async syncSalesInvoices() {
-  this.logger.debug('Synchronizing sales invoices...');
+async syncSalesInvoices(fullSync: boolean = false) {
+  this.logger.debug(`Synchronizing sales invoices (fullSync=${fullSync})...`);
   const entityName = 'sales_invoices';
   try {
-    const lastSync = await this.getLastSyncTimestamp(entityName);
+    const lastSync = fullSync ? null : await this.getLastSyncTimestamp(entityName);
 
     const v2SalesInvoices = await this.v2ApiService.getSalesInvoices(lastSync);
     this.logger.debug(`Fetched ${v2SalesInvoices.length} sales invoices from V2 API`);
@@ -388,9 +412,29 @@ async syncSalesInvoices() {
       }
     }
 
+    // Optional: Handle deletions during full sync
+    if (fullSync) {
+      // For sales invoices
+      const dynamicsInvoiceIds = v2SalesInvoices.map(inv => inv.id);
+      const localInvoices = await this.salesInvoiceRepository.find({ select: ['id'] });
+      const localInvoiceIds = localInvoices.map(inv => inv.id);
+
+      const invoicesToDelete = localInvoiceIds.filter(id => !dynamicsInvoiceIds.includes(id));
+
+      if (invoicesToDelete.length > 0) {
+        await this.salesInvoiceRepository.delete(invoicesToDelete);
+        this.logger.debug(`Deleted ${invoicesToDelete.length} sales invoices not present in Dynamics`);
+
+        // Delete related invoice lines
+        await this.salesInvoiceLineRepository.delete({ salesInvoiceId: In(invoicesToDelete) });
+        this.logger.debug(`Deleted sales invoice lines related to deleted invoices`);
+      }
+    }
+
     await this.updateLastSyncTimestamp(entityName);
   } catch (error) {
-    this.logger.error('Error during sales invoice synchronization', error.stack);
+    const err = error as any;
+    this.logger.error('Error during sales invoice synchronization', err.stack);
     throw error;
   }
 }
@@ -545,11 +589,11 @@ private transformV2SalesInvoiceLine(data: any, salesInvoiceId: string): SalesInv
 // ----------------------------------
 // Sales Credit Memo Synchronization
 // ----------------------------------
-async syncSalesCreditMemos() {
-  this.logger.debug('Synchronizing sales credit memos...');
+async syncSalesCreditMemos(fullSync: boolean = false) {
+  this.logger.debug(`Synchronizing sales credit memos (fullSync=${fullSync})...`);
   const entityName = 'sales_credit_memos';
   try {
-    const lastSync = await this.getLastSyncTimestamp(entityName);
+    const lastSync = fullSync ? null : await this.getLastSyncTimestamp(entityName);
 
     const v2CreditMemos = await this.v2ApiService.getSalesCreditMemos(lastSync);
     this.logger.debug(`Fetched ${v2CreditMemos.length} sales credit memos from V2 API`);
@@ -572,9 +616,28 @@ async syncSalesCreditMemos() {
       }
     }
 
+    // Optional: Handle deletions during full sync
+    if (fullSync) {
+      const dynamicsMemoIds = v2CreditMemos.map(memo => memo.id);
+      const localMemos = await this.salesCreditMemoRepository.find({ select: ['id'] });
+      const localMemoIds = localMemos.map(memo => memo.id);
+
+      const memosToDelete = localMemoIds.filter(id => !dynamicsMemoIds.includes(id));
+
+      if (memosToDelete.length > 0) {
+        await this.salesCreditMemoRepository.delete(memosToDelete);
+        this.logger.debug(`Deleted ${memosToDelete.length} sales credit memos not present in Dynamics`);
+
+        // Delete related memo lines
+        await this.salesCreditMemoLineRepository.delete({ salesCreditMemoId: In(memosToDelete) });
+        this.logger.debug(`Deleted sales credit memo lines related to deleted memos`);
+      }
+    }
+
     await this.updateLastSyncTimestamp(entityName);
   } catch (error) {
-    this.logger.error('Error during sales credit memo synchronization', error.stack);
+    const err = error as any;
+    this.logger.error('Error during sales credit memo synchronization', err.stack);
     throw error;
   }
 }
@@ -738,11 +801,11 @@ async syncSalesCreditMemos() {
 // ----------------------------------
 // Purchase Invoice Synchronization
 // ----------------------------------
-async syncPurchaseInvoices() {
-  this.logger.debug('Synchronizing purchase invoices...');
+async syncPurchaseInvoices(fullSync: boolean = false) {
+  this.logger.debug(`Synchronizing purchase invoices (fullSync=${fullSync})...`);
   const entityName = 'purchase_invoices';
   try {
-    const lastSync = await this.getLastSyncTimestamp(entityName);
+    const lastSync = fullSync ? null : await this.getLastSyncTimestamp(entityName);
 
     const v2PurchaseInvoices = await this.v2ApiService.getPurchaseInvoices(lastSync);
     this.logger.debug(`Fetched ${v2PurchaseInvoices.length} purchase invoices from V2 API`);
@@ -765,9 +828,28 @@ async syncPurchaseInvoices() {
       }
     }
 
+    // Optional: Handle deletions during full sync
+    if (fullSync) {
+      const dynamicsInvoiceIds = v2PurchaseInvoices.map(inv => inv.id);
+      const localInvoices = await this.purchaseInvoiceRepository.find({ select: ['id'] });
+      const localInvoiceIds = localInvoices.map(inv => inv.id);
+
+      const invoicesToDelete = localInvoiceIds.filter(id => !dynamicsInvoiceIds.includes(id));
+
+      if (invoicesToDelete.length > 0) {
+        await this.purchaseInvoiceRepository.delete(invoicesToDelete);
+        this.logger.debug(`Deleted ${invoicesToDelete.length} purchase invoices not present in Dynamics`);
+
+        // Delete related invoice lines
+        await this.purchaseInvoiceLineRepository.delete({ purchaseInvoiceId: In(invoicesToDelete) });
+        this.logger.debug(`Deleted purchase invoice lines related to deleted invoices`);
+      }
+    }
+
     await this.updateLastSyncTimestamp(entityName);
   } catch (error) {
-    this.logger.error('Error during purchase invoice synchronization', error.stack);
+    const err = error as any;
+    this.logger.error('Error during purchase invoice synchronization', err.stack);
     throw error;
   }
 }
@@ -860,11 +942,11 @@ async syncPurchaseInvoices() {
 // ----------------------------------
 // Purchase Order Synchronization
 // ----------------------------------
-async syncPurchaseOrders() {
-  this.logger.debug('Synchronizing purchase orders...');
+async syncPurchaseOrders(fullSync: boolean = false) {
+  this.logger.debug(`Synchronizing purchase orders (fullSync=${fullSync})...`);
   const entityName = 'purchase_orders';
   try {
-    const lastSync = await this.getLastSyncTimestamp(entityName);
+    const lastSync = fullSync ? null : await this.getLastSyncTimestamp(entityName);
 
     const v2PurchaseOrders = await this.v2ApiService.getPurchaseOrders(lastSync);
     this.logger.debug(`Fetched ${v2PurchaseOrders.length} purchase orders from V2 API`);
@@ -887,9 +969,28 @@ async syncPurchaseOrders() {
       }
     }
 
+    // Optional: Handle deletions during full sync
+    if (fullSync) {
+      const dynamicsOrderIds = v2PurchaseOrders.map(order => order.id);
+      const localOrders = await this.purchaseOrderRepository.find({ select: ['id'] });
+      const localOrderIds = localOrders.map(order => order.id);
+
+      const ordersToDelete = localOrderIds.filter(id => !dynamicsOrderIds.includes(id));
+
+      if (ordersToDelete.length > 0) {
+        await this.purchaseOrderRepository.delete(ordersToDelete);
+        this.logger.debug(`Deleted ${ordersToDelete.length} purchase orders not present in Dynamics`);
+
+        // Delete related order lines
+        await this.purchaseOrderLineRepository.delete({ purchaseOrderId: In(ordersToDelete) });
+        this.logger.debug(`Deleted purchase order lines related to deleted orders`);
+      }
+    }
+
     await this.updateLastSyncTimestamp(entityName);
   } catch (error) {
-    this.logger.error('Error during purchase order synchronization', error.stack);
+    const err = error as any;
+    this.logger.error('Error during purchase order synchronization', err.stack);
     throw error;
   }
 }
@@ -987,11 +1088,11 @@ async syncPurchaseOrders() {
 // ----------------------------------
 // Purchase Credit Memo Synchronization
 // ----------------------------------
-async syncPurchaseCreditMemos() {
-  this.logger.debug('Synchronizing purchase credit memos...');
+async syncPurchaseCreditMemos(fullSync: boolean = false) {
+  this.logger.debug(`Synchronizing purchase credit memos (fullSync=${fullSync})...`);
   const entityName = 'purchase_credit_memos';
   try {
-    const lastSync = await this.getLastSyncTimestamp(entityName);
+    const lastSync = fullSync ? null : await this.getLastSyncTimestamp(entityName);
 
     const v2CreditMemos = await this.v2ApiService.getPurchaseCreditMemos(lastSync);
     this.logger.debug(`Fetched ${v2CreditMemos.length} purchase credit memos from V2 API`);
@@ -1014,9 +1115,28 @@ async syncPurchaseCreditMemos() {
       }
     }
 
+    // Optional: Handle deletions during full sync
+    if (fullSync) {
+      const dynamicsMemoIds = v2CreditMemos.map(memo => memo.id);
+      const localMemos = await this.purchaseCreditMemoRepository.find({ select: ['id'] });
+      const localMemoIds = localMemos.map(memo => memo.id);
+
+      const memosToDelete = localMemoIds.filter(id => !dynamicsMemoIds.includes(id));
+
+      if (memosToDelete.length > 0) {
+        await this.purchaseCreditMemoRepository.delete(memosToDelete);
+        this.logger.debug(`Deleted ${memosToDelete.length} purchase credit memos not present in Dynamics`);
+
+        // Delete related memo lines
+        await this.purchaseCreditMemoLineRepository.delete({ purchaseCreditMemoId: In(memosToDelete) });
+        this.logger.debug(`Deleted purchase credit memo lines related to deleted memos`);
+      }
+    }
+
     await this.updateLastSyncTimestamp(entityName);
   } catch (error) {
-    this.logger.error('Error during purchase credit memo synchronization', error.stack);
+    const err = error as any;
+    this.logger.error('Error during purchase credit memo synchronization', err.stack);
     throw error;
   }
 }
@@ -1103,11 +1223,11 @@ async syncPurchaseCreditMemos() {
 // ----------------------------------
 // G/L Entries Synchronization
 // ----------------------------------
-async syncGeneralLedgerEntries() {
-  this.logger.debug('Synchronizing general ledger entries...');
+async syncGeneralLedgerEntries(fullSync: boolean = false) {
+  this.logger.debug(`Synchronizing general ledger entries (fullSync=${fullSync})...`);
   const entityName = 'general_ledger_entries';
   try {
-    const lastSync = await this.getLastSyncTimestamp(entityName);
+    const lastSync = fullSync ? null : await this.getLastSyncTimestamp(entityName);
 
     const v2GLEntries = await this.v2ApiService.getGeneralLedgerEntries(lastSync);
     this.logger.debug(`Fetched ${v2GLEntries.length} general ledger entries from V2 API`);
@@ -1117,9 +1237,24 @@ async syncGeneralLedgerEntries() {
       await this.generalLedgerEntryRepository.save(glEntity);
     }
 
+    // Optional: Handle deletions during full sync
+    if (fullSync) {
+      const dynamicsEntryIds = v2GLEntries.map(entry => entry.id);
+      const localEntries = await this.generalLedgerEntryRepository.find({ select: ['id'] });
+      const localEntryIds = localEntries.map(entry => entry.id);
+
+      const entriesToDelete = localEntryIds.filter(id => !dynamicsEntryIds.includes(id));
+
+      if (entriesToDelete.length > 0) {
+        await this.generalLedgerEntryRepository.delete(entriesToDelete);
+        this.logger.debug(`Deleted ${entriesToDelete.length} general ledger entries not present in Dynamics`);
+      }
+    }
+
     await this.updateLastSyncTimestamp(entityName);
   } catch (error) {
-    this.logger.error('Error during general ledger entry synchronization', error.stack);
+    const err = error as any;
+    this.logger.error('Error during general ledger entry synchronization', err.stack);
     throw error;
   }
 }
@@ -1146,25 +1281,39 @@ async syncGeneralLedgerEntries() {
 // ----------------------------------
 // Customer Ledger Entries Synchronization
 // ----------------------------------
-async syncCustomerLedgerEntries() {
-  this.logger.debug('Synchronizing customer ledger entries...');
+async syncCustomerLedgerEntries(fullSync: boolean = false) {
+  this.logger.debug(`Synchronizing customer ledger entries (fullSync=${fullSync})...`);
   const entityName = 'customer_ledger_entries';
   try {
-    const lastSync = await this.getLastSyncTimestamp(entityName);
+    const lastSync = fullSync ? null : await this.getLastSyncTimestamp(entityName);
 
     const tmcCustLedgerEntries = await this.tmcApiService.getCustomerLedgerEntries(lastSync);
-    this.logger.debug(
-      `Fetched ${tmcCustLedgerEntries.length} customer ledger entries from TMC API`
-    );
+    this.logger.debug(`Fetched ${tmcCustLedgerEntries.length} customer ledger entries from TMC API`);
 
     for (const tmcEntry of tmcCustLedgerEntries) {
       const custLedgerEntity = this.transformTmcCustomerLedgerEntry(tmcEntry);
       await this.customerLedgerEntryRepository.save(custLedgerEntity);
     }
 
+    // Optional: Handle deletions during full sync
+    if (fullSync) {
+      // Assuming 'entryNo' is the unique identifier
+      const dynamicsEntryNos = tmcCustLedgerEntries.map(entry => entry.entryNo);
+      const localEntries = await this.customerLedgerEntryRepository.find({ select: ['entryNo'] });
+      const localEntryNos = localEntries.map(entry => entry.entryNo);
+
+      const entriesToDelete = localEntryNos.filter(no => !dynamicsEntryNos.includes(no));
+
+      if (entriesToDelete.length > 0) {
+        await this.customerLedgerEntryRepository.delete(entriesToDelete);
+        this.logger.debug(`Deleted ${entriesToDelete.length} customer ledger entries not present in Dynamics`);
+      }
+    }
+
     await this.updateLastSyncTimestamp(entityName);
   } catch (error) {
-    this.logger.error('Error during customer ledger entry synchronization', error.stack);
+    const err = error as any;
+    this.logger.error('Error during customer ledger entry synchronization', err.stack);
     throw error;
   }
 }
@@ -1221,11 +1370,12 @@ async syncCustomerLedgerEntries() {
    // ----------------------------------
   // Synchronization Accounts
   // ----------------------------------
-  async syncAccounts() {
-    this.logger.debug('Synchronizing accounts...');
+  async syncAccounts(fullSync: boolean = false) {
+    this.logger.debug(`Synchronizing accounts (fullSync=${fullSync})...`);
     const entityName = 'accounts';
     try {
-      const lastSync = await this.getLastSyncTimestamp(entityName);
+      const lastSync = fullSync ? null : await this.getLastSyncTimestamp(entityName);
+  
       const accounts = await this.v2ApiService.getAccounts(lastSync);
       this.logger.debug(`Fetched ${accounts.length} accounts from V2 API`);
   
@@ -1234,9 +1384,24 @@ async syncCustomerLedgerEntries() {
         await this.accountRepository.save(accountEntity);
       }
   
+      // Optional: Handle deletions during full sync
+      if (fullSync) {
+        const dynamicsIds = accounts.map(account => account.id);
+        const localAccounts = await this.accountRepository.find({ select: ['id'] });
+        const localIds = localAccounts.map(account => account.id);
+  
+        const idsToDelete = localIds.filter(id => !dynamicsIds.includes(id));
+  
+        if (idsToDelete.length > 0) {
+          await this.accountRepository.delete(idsToDelete);
+          this.logger.debug(`Deleted ${idsToDelete.length} accounts not present in Dynamics`);
+        }
+      }
+  
       await this.updateLastSyncTimestamp(entityName);
     } catch (error) {
-      this.logger.error('Error during accounts synchronization', error.stack);
+    const err = error as any;
+      this.logger.error('Error during accounts synchronization', err.stack);
       throw error;
     }
   }
@@ -1265,11 +1430,12 @@ async syncCustomerLedgerEntries() {
    // ----------------------------------
   // Synchronization Bank Accounts
   // ----------------------------------
-  async syncBankAccounts() {
-    this.logger.debug('Synchronizing bank accounts...');
+  async syncBankAccounts(fullSync: boolean = false) {
+    this.logger.debug(`Synchronizing bank accounts (fullSync=${fullSync})...`);
     const entityName = 'bank_accounts';
     try {
-      const lastSync = await this.getLastSyncTimestamp(entityName);
+      const lastSync = fullSync ? null : await this.getLastSyncTimestamp(entityName);
+  
       const bankAccounts = await this.v2ApiService.getBankAccounts(lastSync);
       this.logger.debug(`Fetched ${bankAccounts.length} bank accounts from V2 API`);
   
@@ -1278,9 +1444,24 @@ async syncCustomerLedgerEntries() {
         await this.bankAccountRepository.save(bankAccountEntity);
       }
   
+      // Optional: Handle deletions during full sync
+      if (fullSync) {
+        const dynamicsIds = bankAccounts.map(account => account.id);
+        const localAccounts = await this.bankAccountRepository.find({ select: ['id'] });
+        const localIds = localAccounts.map(account => account.id);
+  
+        const idsToDelete = localIds.filter(id => !dynamicsIds.includes(id));
+  
+        if (idsToDelete.length > 0) {
+          await this.bankAccountRepository.delete(idsToDelete);
+          this.logger.debug(`Deleted ${idsToDelete.length} bank accounts not present in Dynamics`);
+        }
+      }
+  
       await this.updateLastSyncTimestamp(entityName);
     } catch (error) {
-      this.logger.error('Error during bank accounts synchronization', error.stack);
+    const err = error as any;
+      this.logger.error('Error during bank accounts synchronization', err.stack);
       throw error;
     }
   }
@@ -1306,11 +1487,11 @@ async syncCustomerLedgerEntries() {
 // ----------------------------------
 // Ship-to Address Synchronization
 // ----------------------------------
-async syncShipToAddresses() {
-  this.logger.debug('Synchronizing ship-to addresses...');
+async syncShipToAddresses(fullSync: boolean = false) {
+  this.logger.debug(`Synchronizing ship-to addresses (fullSync=${fullSync})...`);
   const entityName = 'ship_to_addresses';
   try {
-    const lastSync = await this.getLastSyncTimestamp(entityName);
+    const lastSync = fullSync ? null : await this.getLastSyncTimestamp(entityName);
 
     const shipToAddresses = await this.tmcApiService.getShipToAddresses(lastSync);
     this.logger.debug(`Fetched ${shipToAddresses.length} ship-to addresses from TMC API`);
@@ -1320,9 +1501,24 @@ async syncShipToAddresses() {
       await this.shipToAddressRepository.save(shipToEntity);
     }
 
+    // Optional: Handle deletions during full sync
+    if (fullSync) {
+      const dynamicsIds = shipToAddresses.map(addr => addr.systemId);
+      const localAddresses = await this.shipToAddressRepository.find({ select: ['systemId'] });
+      const localIds = localAddresses.map(addr => addr.systemId);
+
+      const idsToDelete = localIds.filter(id => !dynamicsIds.includes(id));
+
+      if (idsToDelete.length > 0) {
+        await this.shipToAddressRepository.delete(idsToDelete);
+        this.logger.debug(`Deleted ${idsToDelete.length} ship-to addresses not present in Dynamics`);
+      }
+    }
+
     await this.updateLastSyncTimestamp(entityName);
   } catch (error) {
-    this.logger.error('Error during ship-to address synchronization', error.stack);
+    const err = error as any;
+    this.logger.error('Error during ship-to address synchronization', err.stack);
     throw error;
   }
 }
@@ -1356,11 +1552,11 @@ private transformShipToAddress(data: any): ShipToAddress {
 // ----------------------------------
 // Job Synchronization
 // ----------------------------------
-async syncJobs() {
-  this.logger.debug('Synchronizing jobs...');
+async syncJobs(fullSync: boolean = false) {
+  this.logger.debug(`Synchronizing jobs (fullSync=${fullSync})...`);
   const entityName = 'jobs';
   try {
-    const lastSync = await this.getLastSyncTimestamp(entityName);
+    const lastSync = fullSync ? null : await this.getLastSyncTimestamp(entityName);
 
     const jobs = await this.tmcApiService.getJobs(lastSync);
     this.logger.debug(`Fetched ${jobs.length} jobs from TMC API`);
@@ -1370,9 +1566,24 @@ async syncJobs() {
       await this.jobRepository.save(jobEntity);
     }
 
+    // Optional: Handle deletions during full sync
+    if (fullSync) {
+      const dynamicsIds = jobs.map(job => job.systemId);
+      const localJobs = await this.jobRepository.find({ select: ['systemId'] });
+      const localIds = localJobs.map(job => job.systemId);
+
+      const idsToDelete = localIds.filter(id => !dynamicsIds.includes(id));
+
+      if (idsToDelete.length > 0) {
+        await this.jobRepository.delete(idsToDelete);
+        this.logger.debug(`Deleted ${idsToDelete.length} jobs not present in Dynamics`);
+      }
+    }
+
     await this.updateLastSyncTimestamp(entityName);
   } catch (error) {
-    this.logger.error('Error during job synchronization', error.stack);
+    const err = error as any;
+    this.logger.error('Error during job synchronization', err.stack);
     throw error;
   }
 }
@@ -1400,27 +1611,27 @@ private transformJob(data: any): Job {
 // ----------------------------------
 // Billing Schedule Line Synchronization
 // ----------------------------------
-async syncBillingScheduleLines() {
-  this.logger.debug('Synchronizing billing schedule lines...');
+async syncBillingScheduleLines(fullSync: boolean = false) {
+  this.logger.debug(`Synchronizing billing schedule lines (fullSync=${fullSync})...`);
   try {
-    // Fetch all billing schedule lines
     const billingScheduleLines = await this.tmcApiService.getBillingScheduleLines();
-    this.logger.debug(
-      `Fetched ${billingScheduleLines.length} billing schedule lines from TMC API`
-    );
+    this.logger.debug(`Fetched ${billingScheduleLines.length} billing schedule lines from TMC API`);
 
     // Optional: Clear existing data to avoid duplicates or outdated records
     await this.billingScheduleLineRepository.clear();
     this.logger.debug('Cleared existing billing schedule lines from database');
 
+    // Save fetched billing schedule lines
     for (const data of billingScheduleLines) {
       const billingLineEntity = this.transformBillingScheduleLine(data);
       await this.billingScheduleLineRepository.save(billingLineEntity);
     }
 
-    // Since we're not using lastSync or updating timestamps, entityName is not needed
+    // Since we're always fetching all records and clearing data, further deletion handling is not necessary
+    // No need to update last sync timestamp since we're not using it for this entity
   } catch (error) {
-    this.logger.error('Error during billing schedule line synchronization', error.stack);
+    const err = error as any;
+    this.logger.error('Error during billing schedule line synchronization', err.stack);
     throw error;
   }
 }

@@ -328,11 +328,12 @@ async getCustomerPaymentsFromLedger(startDate: string, endDate: string): Promise
   
       return paymentsWithInvoices;
     } catch (error) {
+    const err = error as any;
       this.logger.error(`Failed to fetch payments for customer ${customerNumber}`, error);
-      if (error.response) {
-        this.logger.error(`Error response data: ${JSON.stringify(error.response.data)}`);
+      if (err.response) {
+        this.logger.error(`Error response data: ${JSON.stringify(err.response.data)}`);
       }
-      throw new HttpException('Failed to fetch customer payments', error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException('Failed to fetch customer payments', err.response?.status || HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }

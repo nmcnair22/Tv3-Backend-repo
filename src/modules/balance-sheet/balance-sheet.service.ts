@@ -14,6 +14,7 @@ export class BalanceSheetService {
       const balanceSheet = await this.dynamicsReportsService.getBalanceSheetStatements(date);
       return balanceSheet;
     } catch (error) {
+    const err = error as any;
       this.logger.error('Error fetching balance sheet', error);
       throw error;
     }

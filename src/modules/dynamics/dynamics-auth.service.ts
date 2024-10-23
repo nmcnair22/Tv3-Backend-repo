@@ -55,10 +55,11 @@ export class DynamicsAuthService {
       this.logger.debug(`Access token fetched successfully`);
       return this.accessToken;
     } catch (error) {
-      this.logger.error(`Failed to fetch access token: ${error.message}`);
-      if (error.response) {
+    const err = error as any;
+      this.logger.error(`Failed to fetch access token: ${err.message}`);
+      if (err.response) {
         this.logger.error(
-          `Error response data: ${JSON.stringify(error.response.data)}`,
+          `Error response data: ${JSON.stringify(err.response.data)}`,
         );
       }
       throw new HttpException(

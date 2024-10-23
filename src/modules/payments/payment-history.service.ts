@@ -43,7 +43,8 @@ export class PaymentHistoryService {
 
       return paymentHistory;
     } catch (error) {
-      this.logger.error(`Error fetching payment history for ${customerNumber}:`, error.message);
+    const err = error as any;
+      this.logger.error(`Error fetching payment history for ${customerNumber}:`, err.message);
       throw new Error('Failed to fetch payment history.');
     }
   }

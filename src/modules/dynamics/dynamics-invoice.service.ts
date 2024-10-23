@@ -71,13 +71,14 @@ export class DynamicsInvoiceService extends DynamicsBaseService {
       this.logger.debug(`Fetched ${invoices.length} invoices successfully`);
       return invoices;
     } catch (error) {
+    const err = error as any;
       this.logger.error('Failed to fetch invoices', error);
-      if (error.response) {
-        this.logger.error(`Error response data: ${JSON.stringify(error.response.data)}`);
+      if (err.response) {
+        this.logger.error(`Error response data: ${JSON.stringify(err.response.data)}`);
       }
       throw new HttpException(
         'Failed to fetch invoices',
-        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+        err.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
@@ -98,13 +99,14 @@ export class DynamicsInvoiceService extends DynamicsBaseService {
       this.logger.debug(`Fetched invoice lines successfully`);
       return response.data.value as InvoiceLine[]; // Return the array of invoice lines
     } catch (error) {
+    const err = error as any;
       this.logger.error(`Failed to fetch invoice lines for invoice ${invoiceId}`, error);
-      if (error.response) {
-        this.logger.error(`Error response data: ${JSON.stringify(error.response.data)}`);
+      if (err.response) {
+        this.logger.error(`Error response data: ${JSON.stringify(err.response.data)}`);
       }
       throw new HttpException(
         `Failed to fetch invoice lines for invoice ${invoiceId}`,
-        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+        err.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
@@ -181,6 +183,7 @@ async getRevenueByCategory(startDate: string, endDate: string): Promise<{
       this.logger.warn(`Invoice with number ${invoiceNumber} not found`);
       return null;
     } catch (error) {
+    const err = error as any;
       this.logger.error(`Failed to fetch invoice with number: ${invoiceNumber}`, error);
       throw error;
     }
@@ -206,6 +209,7 @@ async getInvoicesByCustomer(customerNumber: string, startDate: string, endDate: 
     const response = await firstValueFrom(this.httpService.get(url, config));
     return response.data.value as Invoice[];
   } catch (error) {
+    const err = error as any;
     this.logger.error(`Failed to fetch invoices for customer ${customerNumber}`, error);
     throw error;
   }
@@ -224,6 +228,7 @@ async getInvoicesByCustomer(customerNumber: string, startDate: string, endDate: 
       const response = await firstValueFrom(this.httpService.get(url, config));
       return response.data.value as InvoiceLine[];
     } catch (error) {
+    const err = error as any;
       this.logger.error(`Failed to fetch invoice lines for invoice ID: ${invoiceId}`, error);
       throw error;
     }
@@ -256,6 +261,7 @@ async getInvoicesByCustomer(customerNumber: string, startDate: string, endDate: 
       }
       return invoices;
     } catch (error) {
+    const err = error as any;
       this.logger.error('Failed to fetch invoices by numbers', error);
       throw error;
     }

@@ -11,6 +11,7 @@ export class IncomeStatementsController {
     try {
       return await this.incomeStatementsService.getIncomeStatements(startDate, endDate);
     } catch (error) {
+    const err = error as any;
       throw new HttpException('Error fetching income statements', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }

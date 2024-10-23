@@ -43,17 +43,18 @@ export class V2ApiService {
       this.logger.debug(`GET request to ${url} succeeded with status ${response.status}`);
       return response.data.value; // Assuming OData response
     } catch (error) {
-      if (error.response) {
-        this.logger.error(`GET request to ${url} failed with status ${error.response.status}: ${error.response.statusText}`);
-        this.logger.error(`Response Data: ${JSON.stringify(error.response.data)}`);
-      } else if (error.request) {
+    const err = error as any;
+      if (err.response) {
+        this.logger.error(`GET request to ${url} failed with status ${err.response.status}: ${err.response.statusText}`);
+        this.logger.error(`Response Data: ${JSON.stringify(err.response.data)}`);
+      } else if (err.request) {
         this.logger.error(`GET request to ${url} failed: No response received.`);
       } else {
-        this.logger.error(`GET request to ${url} failed: ${error.message}`);
+        this.logger.error(`GET request to ${url} failed: ${err.message}`);
       }
       throw new HttpException(
         `Failed to fetch data from ${url}`,
-        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+        err.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }

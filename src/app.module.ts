@@ -1,9 +1,10 @@
 // src/app.module.ts
 
 import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule'; // Import ScheduleModule
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AppDataSource } from '../data-source';
 
 // Existing modules
 import { CommonModule } from './common/common.module';
@@ -24,21 +25,7 @@ import { SyncModule } from './modules/sync/sync.module';
     ConfigModule.forRoot({
       isGlobal: true, // Makes ConfigService available globally
     }),
-    TypeOrmModule.forRootAsync({
-      imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
-        type: 'mysql', 
-        host: configService.get<string>('DB_HOST'),
-        port: configService.get<number>('DB_PORT'),
-        username: configService.get<string>('DB_USERNAME'),
-        password: configService.get<string>('DB_PASSWORD'),
-        database: configService.get<string>('DB_DATABASE'),
-        entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: true, 
-        logging: true,
-      }),
-      inject: [ConfigService],
-    }),
+    TypeOrmModule.forRoot(AppDataSource.options),
     ScheduleModule.forRoot(), // Add ScheduleModule here
     // Core Modules
     UserModule,

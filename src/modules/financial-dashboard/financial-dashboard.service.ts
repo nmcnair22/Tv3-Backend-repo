@@ -30,7 +30,8 @@ export class FinancialDashboardService {
 
         return inflowsData;
     } catch (error) {
-        this.logger.error(`Error in getInflowsData: ${error.message}`);
+    const err = error as any;
+        this.logger.error(`Error in getInflowsData: ${err.message}`);
         throw new HttpException('Failed to fetch inflows data', HttpStatus.INTERNAL_SERVER_ERROR);
     }
 }
@@ -74,8 +75,8 @@ async getDSOMetrics(startDate: string, endDate: string): Promise<DSOMetric[]> {
 
     this.logger.debug(`Total DSO metrics calculated: ${dsoMetrics.length}`);
     return dsoMetrics;
-  } catch (error: any) {
-    this.logger.error(`Error fetching DSO metrics: ${error.message}`);
+  } catch (err: any) {
+    this.logger.error(`Error fetching DSO metrics: ${err.message}`);
     throw new HttpException('Failed to fetch DSO metrics', HttpStatus.INTERNAL_SERVER_ERROR);
   }
 }
@@ -99,7 +100,8 @@ async getDSOMetrics(startDate: string, endDate: string): Promise<DSOMetric[]> {
         amount: paymentsByCustomer[customer],
       }));
     } catch (error) {
-      this.logger.error('Error fetching payments by customer:', error.message);
+    const err = error as any;
+      this.logger.error('Error fetching payments by customer:', err.message);
       throw new Error('Failed to fetch payments by customer.');
     }
   }
@@ -115,7 +117,8 @@ async getDSOMetrics(startDate: string, endDate: string): Promise<DSOMetric[]> {
         paymentsByCustomer,
       };
     } catch (error) {
-      this.logger.error('Error fetching customer payments:', error.message);
+    const err = error as any;
+      this.logger.error('Error fetching customer payments:', err.message);
       throw new HttpException('Failed to fetch customer payments', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
@@ -235,7 +238,8 @@ async getDSOMetrics(startDate: string, endDate: string): Promise<DSOMetric[]> {
 
       return topLateCustomers;
     } catch (error) {
-      this.logger.error(`Error fetching top late customers: ${error.message}`);
+    const err = error as any;
+      this.logger.error(`Error fetching top late customers: ${err.message}`);
       throw new HttpException('Failed to fetch top late customers', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }

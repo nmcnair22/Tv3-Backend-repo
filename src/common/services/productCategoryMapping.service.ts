@@ -48,6 +48,7 @@ export class ProductCategoryMappingService {
 
       return productToCategoryMap;
     } catch (error) {
+    const err = error as any;
       this.logger.error('Failed to get product-to-category mapping', error);
       throw error;
     }
@@ -68,6 +69,7 @@ export class ProductCategoryMappingService {
         matchPostingGroup: (group) => group === statement.display, // Adjust the match logic as necessary
       }));
     } catch (error) {
+    const err = error as any;
       this.logger.error(
         'Failed to fetch income categories from income statements',
         error,
