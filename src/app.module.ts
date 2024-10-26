@@ -17,6 +17,7 @@ import { UserModule } from './user/user.module';
 
 // Newly added modules
 import { AgingModule } from './modules/aging/aging.module';
+import { FinancialDashboardLocalModule } from './modules/financial-dashboard-local/financial-dashboard-local.module';
 import { PaymentHistoryModule } from './modules/payments/payment-history.module';
 import { SyncModule } from './modules/sync/sync.module';
 
@@ -39,7 +40,8 @@ import { SyncModule } from './modules/sync/sync.module';
     // Newly Added Feature Modules
     AgingModule,
     PaymentHistoryModule,
-    SyncModule, // Ensure SyncModule is imported here
+    SyncModule,
+    FinancialDashboardLocalModule, // Ensure SyncModule is imported here
   ],
 })
 export class AppModule {}

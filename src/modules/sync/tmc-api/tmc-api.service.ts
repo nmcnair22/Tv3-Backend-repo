@@ -4,6 +4,7 @@ import { HttpService } from '@nestjs/axios';
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AxiosRequestConfig } from 'axios';
+import axiosRetry from 'axios-retry';
 import { firstValueFrom } from 'rxjs';
 import { DynamicsAuthService } from '../../dynamics/dynamics-auth.service';
 
@@ -15,7 +16,20 @@ export class TmcApiService {
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
     private readonly dynamicsAuthService: DynamicsAuthService,
-  ) {}
+  ) {
+    // Configure axios-retry for the HttpService instance
+    axiosRetry(this.httpService.axiosRef, {
+      retries: 5,
+      retryDelay: (retryCount) => {
+        return axiosRetry.exponentialDelay(retryCount);
+      },
+      shouldResetTimeout: true,
+      retryCondition: (error) => {
+        // Retry on network errors or 5xx status codes
+        return axiosRetry.isNetworkOrIdempotentRequestError(error) || error.response?.status >= 500;
+      },
+    });
+  }
 
   /**
    * Get the base URL for the TMC Integration API.
@@ -31,25 +45,64 @@ export class TmcApiService {
   /**
    * Make a GET request to the specified URL with authentication and optional query parameters.
    */
-  private async getRequest(url: string, params?: Record<string, string>): Promise<any[]> {
+  private async getRequest(url: string, params?: Record<string, any>): Promise<any[]> {
+    const headers = await this.dynamicsAuthService.getHeaders();
+    let config: AxiosRequestConfig = {
+      headers,
+      params,
+    };
+  
+    let allData = [];
+    let nextUrl: string | undefined = url;
+  
     try {
-      const headers = await this.dynamicsAuthService.getHeaders();
-      const config: AxiosRequestConfig = {
-        headers,
-        params,
-      };
-
-      const response = await firstValueFrom(
-        this.httpService.get(url, config),
-      );
-
-      this.logger.debug(`GET request to ${url} succeeded with status ${response.status}`);
-      return response.data.value; // Assuming OData response
+      do {
+        this.logger.debug(`Requesting URL: ${nextUrl}`);
+        const response = await firstValueFrom(this.httpService.get(nextUrl, config));
+  
+        // Append data
+        if (response.data.value) {
+          allData = allData.concat(response.data.value);
+        } else {
+          // In case the response data is an object, not wrapped in 'value'
+          allData.push(response.data);
+        }
+  
+        // Check for nextLink
+        nextUrl = response.data['@odata.nextLink'];
+  
+        // After the first request, remove 'params' from 'config' as 'nextUrl' includes all query parameters
+        config = {
+          headers: await this.dynamicsAuthService.getHeaders(), // Refresh headers
+        };
+  
+        // Log the number of records fetched so far
+        this.logger.debug(`Fetched ${allData.length} records from ${url}`);
+  
+      } while (nextUrl);
+  
+      return allData;
     } catch (error) {
-    const err = error as any;
+      const err = error as any;
+
+      // Handle specific HTTP errors
       if (err.response) {
-        this.logger.error(`GET request to ${url} failed with status ${err.response.status}: ${err.response.statusText}`);
+        const statusCode = err.response.status;
+        const statusText = err.response.statusText;
+        const requestUrl = err.config?.url || url;
+
+        this.logger.error(`GET request to ${requestUrl} failed with status ${statusCode}: ${statusText}`);
         this.logger.error(`Response Data: ${JSON.stringify(err.response.data)}`);
+
+        if (statusCode === 429) {
+          // Handle rate limiting
+          const retryAfter = err.response.headers['retry-after'];
+          const delay = (parseInt(retryAfter, 10) || 5) * 1000; // Default to 5 seconds
+          this.logger.warn(`Received 429 Too Many Requests. Retrying after ${delay}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          // Retry the request
+          return this.getRequest(url, params);
+        }
       } else if (err.request) {
         this.logger.error(`GET request to ${url} failed: No response received.`);
       } else {
@@ -62,55 +115,52 @@ export class TmcApiService {
     }
   }
 
-
   /**
    * Fetch customer ledger entries from the TMC API.
    * @param lastSyncDateTime The timestamp of the last successful synchronization.
    */
-  async getCustomerLedgerEntries(lastSyncDateTime: Date): Promise<any[]> {
+  async getCustomerLedgerEntries(lastSyncDateTime?: Date): Promise<any[]> {
     const url = `${this.baseUrl()}/CustLedgerEntries`;
-    const params = {
-      '$filter': `lastModifiedDateTime gt ${lastSyncDateTime.toISOString()}`,
-    };
+    const params: any = {};
+    if (lastSyncDateTime) {
+      params['$filter'] = `lastModifiedDateTime gt ${lastSyncDateTime.toISOString()}`;
+    }
+
     return await this.getRequest(url, params);
   }
 
-/**
- * Fetch ship-to addresses from the TMC API with optional last sync date for incremental sync.
- */
-async getShipToAddresses(lastSyncDateTime?: Date): Promise<any[]> {
-  const url = `${this.baseUrl()}/shipToAddresses`;
-  const params: any = {};
-  if (lastSyncDateTime) {
-    params['$filter'] = `lastModifiedDateTime gt ${lastSyncDateTime.toISOString()}`;
+  /**
+   * Fetch ship-to addresses from the TMC API with optional last sync date for incremental sync.
+   */
+  async getShipToAddresses(lastSyncDateTime?: Date): Promise<any[]> {
+    const url = `${this.baseUrl()}/shipToAddresses`;
+    const params: any = {};
+    if (lastSyncDateTime) {
+      params['$filter'] = `lastModifiedDateTime gt ${lastSyncDateTime.toISOString()}`;
+    }
+    return await this.getRequest(url, params);
   }
-  return await this.getRequest(url, params);
-}
 
-/**
- * Fetch jobs from the TMC API with optional last sync date for incremental sync.
- */
-async getJobs(lastSyncDateTime?: Date): Promise<any[]> {
-  const url = `${this.baseUrl()}/jobs`;
-  const params: any = {};
-  if (lastSyncDateTime) {
-    params['$filter'] = `lastModifiedDateTime gt ${lastSyncDateTime.toISOString()}`;
+  /**
+   * Fetch jobs from the TMC API with optional last sync date for incremental sync.
+   */
+  async getJobs(lastSyncDateTime?: Date): Promise<any[]> {
+    const url = `${this.baseUrl()}/jobs`;
+    const params: any = {};
+    if (lastSyncDateTime) {
+      params['$filter'] = `lastModifiedDateTime gt ${lastSyncDateTime.toISOString()}`;
+    }
+    return await this.getRequest(url, params);
   }
-  return await this.getRequest(url, params);
-}
 
-/**
- * Fetch billing schedule lines from the TMC API.
- * Since there is no lastModifiedDateTime, we fetch all records.
- */
-async getBillingScheduleLines(): Promise<any[]> {
-  const url = `${this.baseUrl()}/bssiArcbBillingScheduleLines`;
-  const params: any = {
-    // You can include a $select parameter if you want to limit the fields
-    // '$select': '...', // Include fields if needed
-  };
-  // Remove the $filter parameter since lastModifiedDateTime doesn't exist
-  return await this.getRequest(url, params);
-}
-
+  /**
+   * Fetch billing schedule lines from the TMC API.
+   * Since there is no lastModifiedDateTime, we fetch all records.
+   */
+  async getBillingScheduleLines(): Promise<any[]> {
+    const url = `${this.baseUrl()}/bssiArcbBillingScheduleLines`;
+    const params: any = {};
+    // No $filter needed since lastModifiedDateTime doesn't exist
+    return await this.getRequest(url, params);
+  }
 }

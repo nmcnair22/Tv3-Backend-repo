@@ -1,3 +1,5 @@
+// src/modules/financial-dashboard/financial-dashboard.service.ts
+
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { AgedReceivableItem } from 'src/common/types/aged-receivables.types';
 import { FinancialDataService } from '../../common/services/financial-data.service';
