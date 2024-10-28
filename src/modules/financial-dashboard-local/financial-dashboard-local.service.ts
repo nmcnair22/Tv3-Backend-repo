@@ -3,6 +3,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, MoreThan, Repository } from 'typeorm';
+import { DynamicsReportsService } from '../dynamics/dynamics-reports.service';
 import { Account } from '../sync/entities/account.entity';
 import { CustomerLedgerEntry } from '../sync/entities/customer-ledger-entry.entity';
 import { GeneralLedgerEntry } from '../sync/entities/general-ledger-entry.entity';
@@ -24,17 +25,36 @@ export class FinancialDashboardLocalService {
     private readonly accountRepository: Repository<Account>,
     @InjectRepository(SalesCreditMemo)
     private readonly salesCreditMemoRepository: Repository<SalesCreditMemo>,
+    private readonly dynamicsReportsService: DynamicsReportsService, // Injected DynamicsReportsService
   ) {}
 
-  // Adjusted method signature to accept Date objects
-  async getReceivablesForDate(asOfDate: Date): Promise<number> {
-    const result = await this.customerLedgerEntryRepository
-      .createQueryBuilder('entry')
-      .select('SUM(entry.remainingAmount)', 'total')
-      .where('entry.postingDate <= :date', { date: asOfDate })
-      .getRawOne();
+  /**
+   * Retrieves receivables for a specific date from the balance sheet report.
+   * @param date - The date in 'YYYY-MM-DD' format.
+   * @returns The receivable amount.
+   */
+  async getReceivablesForDate(date: string): Promise<number> {
+    this.logger.debug(`Fetching receivables for date: ${date}`);
 
-    return parseFloat(result.total) || 0;
+    try {
+      const balanceSheet = await this.dynamicsReportsService.getBalanceSheetStatements(date);
+      const receivableLine = balanceSheet.value.find((item) =>
+        item.display.toLowerCase().includes('total accounts receivable'),
+      );
+
+      if (receivableLine) {
+        const receivableAmount = receivableLine.balance ?? 0;
+        this.logger.debug(`Receivables on ${date}: ${receivableAmount}`);
+        return receivableAmount;
+      } else {
+        this.logger.warn(`Total Accounts Receivable not found in balance sheet for ${date}`);
+        return 0;
+      }
+    } catch (error) {
+      const err = error as any;
+      this.logger.error(`Error fetching receivables for date ${date}: ${err.message}`);
+      throw new Error('Failed to fetch receivables from Dynamics API');
+    }
   }
 
   // Adjusted method signature to accept Date objects
@@ -206,10 +226,10 @@ export class FinancialDashboardLocalService {
     const start = new Date(startDate);
     const end = new Date(endDate);
 
-    // Step 1: Fetch starting and ending receivables
+    // Step 1: Fetch starting and ending receivables using live API calls
     const [startingReceivables, endingReceivables] = await Promise.all([
-      this.getReceivablesForDate(start),
-      this.getReceivablesForDate(end),
+      this.getReceivablesForDate(startDate),
+      this.getReceivablesForDate(endDate),
     ]);
 
     const netChangeReceivables = endingReceivables - startingReceivables;

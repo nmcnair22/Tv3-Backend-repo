@@ -12,6 +12,11 @@ import { SalesInvoice } from '../sync/entities/sales-invoice.entity';
 import { FinancialDashboardLocalController } from './financial-dashboard-local.controller';
 import { FinancialDashboardLocalService } from './financial-dashboard-local.service';
 
+import { HttpModule } from '@nestjs/axios';
+import { ConfigModule } from '@nestjs/config';
+import { DynamicsAuthService } from '../dynamics/dynamics-auth.service';
+import { DynamicsReportsService } from '../dynamics/dynamics-reports.service';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -24,8 +29,14 @@ import { FinancialDashboardLocalService } from './financial-dashboard-local.serv
       SalesInvoiceLine,
       // ... other entities
     ]),
+    HttpModule, // Added to provide HttpService
+    ConfigModule, // Added to provide ConfigService
   ],
   controllers: [FinancialDashboardLocalController],
-  providers: [FinancialDashboardLocalService]
+  providers: [
+    FinancialDashboardLocalService,
+    DynamicsReportsService,
+    DynamicsAuthService,
+  ],
 })
 export class FinancialDashboardLocalModule {}

@@ -269,4 +269,5 @@ export class SalesInvoice {
 
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
+
 }

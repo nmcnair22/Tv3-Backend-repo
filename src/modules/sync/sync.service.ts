@@ -147,9 +147,7 @@ async syncAll(fullSync: boolean = false) {
     await this.syncBankAccounts(fullSync);
     await this.syncShipToAddresses(fullSync);
     await this.syncJobs(fullSync);
-    await this.syncBillingScheduleLines(); // Always performs a full sync
-
-    this.logger.debug('Synchronization completed successfully.');
+    await this.syncBillingScheduleLines(); // Always performs a full sync    this.logger.debug('Synchronization completed successfully.');
   } catch (error) {
     this.logger.error('Synchronization failed', error.stack);
     throw new Error('Synchronization failed.');
@@ -228,7 +226,7 @@ private transformV2Customer(data: any): Customer {
     shipmentMethodId: data.shipmentMethodId || null,
     paymentMethodId: data.paymentMethodId || null,
     blocked: data.blocked || null,
-    lastModifiedDateTime: data.lastModifiedDateTime ? new Date(data.lastModifiedDateTime) : null,
+    lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
     apiSource: 'v2.0',
   });
 }
@@ -279,9 +277,7 @@ private transformV2Vendor(data: any): Vendor {
     taxLiable: data.taxLiable || null,
     blocked: data.blocked || null,
     balance: data.balance || 0,
-    lastModifiedDateTime: data.lastModifiedDateTime
-      ? new Date(data.lastModifiedDateTime)
-      : null,
+    lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
     apiSource: 'v2.0',
   });
 }
@@ -352,9 +348,7 @@ private transformV2Item(data: any): Item {
         ? data.inventoryPostingGroupId
         : null,
     inventoryPostingGroupCode: data.inventoryPostingGroupCode || null,
-    lastModifiedDateTime: data.lastModifiedDateTime
-      ? new Date(data.lastModifiedDateTime)
-      : null,
+    lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
     apiSource: 'v2.0',
   });
 }
@@ -501,7 +495,7 @@ private transformV2SalesInvoice(data: any): SalesInvoice {
     totalTaxAmount: data.totalTaxAmount,
     totalAmountIncludingTax: data.totalAmountIncludingTax,
     status: data.status || null,
-    lastModifiedDateTime: data.lastModifiedDateTime ? new Date(data.lastModifiedDateTime) : null,
+    lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
     phoneNumber: data.phoneNumber || null,
     email: data.email || null,
     apiSource: 'v2.0',
@@ -576,7 +570,7 @@ private transformV2SalesInvoiceLine(data: any, documentId: string): SalesInvoice
     netAmount: data.netAmount,
     netTaxAmount: data.netTaxAmount,
     netAmountIncludingTax: data.netAmountIncludingTax,
-    shipmentDate: data.shipmentDate ? new Date(data.shipmentDate) : null,
+    shipmentDate: this.parseDateString(data.shipmentDate) || null,
     itemVariantId:
       data.itemVariantId && data.itemVariantId !== '00000000-0000-0000-0000-000000000000'
         ? data.itemVariantId
@@ -679,7 +673,7 @@ private transformV2SalesCreditMemo(data: any): SalesCreditMemo {
     totalTaxAmount: data.totalTaxAmount,
     totalAmountIncludingTax: data.totalAmountIncludingTax,
     status: data.status || null,
-    lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime),
+    lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
     invoiceId: this.transformNullableGuid(data.invoiceId),
     invoiceNumber: data.invoiceNumber || null,
     phoneNumber: data.phoneNumber || null,
@@ -881,7 +875,7 @@ private transformV2PurchaseInvoice(data: any): PurchaseInvoice {
     totalTaxAmount: data.totalTaxAmount ?? null,
     totalAmountIncludingTax: data.totalAmountIncludingTax ?? null,
     status: data.status || null,
-    lastModifiedDateTime: data.lastModifiedDateTime ? new Date(data.lastModifiedDateTime) : null,
+    lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
     apiSource: 'v2.0',
   });
 }
@@ -922,9 +916,7 @@ private transformV2PurchaseInvoiceLine(data: any, purchaseInvoiceDbId: string): 
     netAmount: data.netAmount ?? null,
     netTaxAmount: data.netTaxAmount ?? null,
     netAmountIncludingTax: data.netAmountIncludingTax ?? null,
-    expectedReceiptDate: data.expectedReceiptDate
-      ? new Date(data.expectedReceiptDate)
-      : null,
+    expectedReceiptDate: this.parseDateString(data.expectedReceiptDate) || null,
     itemVariantId:
       data.itemVariantId !== '00000000-0000-0000-0000-000000000000'
         ? data.itemVariantId
@@ -1048,7 +1040,7 @@ private transformV2PurchaseOrder(data: any): PurchaseOrder {
     totalAmountIncludingTax: data.totalAmountIncludingTax || null,
     fullyReceived: data.fullyReceived || null,
     status: data.status || null,
-    lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime),
+    lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
     apiSource: 'v2.0',
   });
 }
@@ -1211,9 +1203,7 @@ private transformV2PurchaseCreditMemo(data: any): PurchaseCreditMemo {
     totalAmountIncludingTax:
       data.totalAmountIncludingTax !== undefined ? data.totalAmountIncludingTax : null,
     status: data.status || null,
-    lastModifiedDateTime: data.lastModifiedDateTime
-      ? new Date(data.lastModifiedDateTime)
-      : null,
+    lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
     invoiceId:
       data.invoiceId && data.invoiceId !== '00000000-0000-0000-0000-000000000000'
         ? data.invoiceId
@@ -1340,7 +1330,7 @@ private transformV2GeneralLedgerEntry(data: any): GeneralLedgerEntry {
   glEntry.creditAmount = data.creditAmount ?? null;
   glEntry.additionalCurrencyDebitAmount = data.additionalCurrencyDebitAmount ?? null;
   glEntry.additionalCurrencyCreditAmount = data.additionalCurrencyCreditAmount ?? null;
-  glEntry.lastModifiedDateTime = data.lastModifiedDateTime ? new Date(data.lastModifiedDateTime) : null;
+  glEntry.lastModifiedDateTime = this.parseDateString(data.lastModifiedDateTime) || null;
   glEntry.apiSource = 'v2.0';
 
   return glEntry;
@@ -1396,7 +1386,7 @@ private transformTmcCustomerLedgerEntry(data: any): CustomerLedgerEntry {
     cfdiCancellationReasonCode: data.cfdiCancellationReasonCode || null,
     calculateInterest: data.calculateInterest,
     certificateSerialNo: data.certificateSerialNo || null,
-    closedAtDate: data.closedAtDate ? new Date(data.closedAtDate) : null,
+    closedAtDate: this.parseDateString(data.closedAtDate) || null,
     closedByAmount: data.closedByAmount,
     closedByAmountLCY: data.closedByAmountLCY,
     closedByCurrencyAmount: data.closedByCurrencyAmount,
@@ -1418,10 +1408,10 @@ private transformTmcCustomerLedgerEntry(data: any): CustomerLedgerEntry {
     digitalStampSAT: data.digitalStampSAT || null,
     dimensionSetID: data.dimensionSetID,
     directDebitMandateID: data.directDebitMandateID || null,
-    documentDate: data.documentDate ? new Date(data.documentDate) : null,
+    documentDate: this.parseDateString(data.documentDate) || null,
     documentNo: data.documentNo || null,
     documentType: data.documentType || null,
-    dueDate: data.dueDate ? new Date(data.dueDate) : null,
+    dueDate: this.parseDateString(data.dueDate) || null,
     electronicDocumentSent: data.electronicDocumentSent,
     electronicDocumentStatus: data.electronicDocumentStatus || null,
     errorCode: data.errorCode || null,
@@ -1432,11 +1422,11 @@ private transformTmcCustomerLedgerEntry(data: any): CustomerLedgerEntry {
     globalDimension1Code: data.globalDimension1Code || null,
     globalDimension2Code: data.globalDimension2Code || null,
     // Map additional properties as needed
-    postingDate: data.postingDate ? new Date(data.postingDate) : null,
+    postingDate: this.parseDateString(data.postingDate) || null,
     remainingAmount: data.remainingAmount,
     remainingAmtLCY: data.remainingAmtLCY,
     systemCreatedAt: data.systemCreatedAt ? new Date(data.systemCreatedAt) : null,
-    lastModifiedDateTime: data.lastModifiedDateTime ? new Date(data.lastModifiedDateTime) : null,
+    lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
     apiSource: 'tmc',
   });
 }
@@ -1513,7 +1503,7 @@ private transformV2Account(data: any): Account {
     consolidationDebitAccount: data.consolidationDebitAccount || null,
     consolidationCreditAccount: data.consolidationCreditAccount || null,
     excludeFromConsolidation: data.excludeFromConsolidation != null ? data.excludeFromConsolidation : null,
-    lastModifiedDateTime: data.lastModifiedDateTime ? new Date(data.lastModifiedDateTime) : null,
+    lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
     apiSource: 'v2.0',
   });
 }
@@ -1559,8 +1549,8 @@ private transformV2BankAccount(data: any): BankAccount {
     iban: data.iban || null,
     intercompanyEnabled:
       data.intercompanyEnabled !== undefined ? data.intercompanyEnabled : null,
-    lastModifiedDateTime: data.lastModifiedDateTime ? new Date(data.lastModifiedDateTime) : null,
-    apiSource: 'v2.0',
+      lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
+      apiSource: 'v2.0',
   });
 }
 
@@ -1630,7 +1620,7 @@ private transformShipToAddress(data: any): ShipToAddress {
     cissdmCrossReferenceCode: data.cissdmCrossReferenceCode ? data.cissdmCrossReferenceCode.substring(0, 20) : null,
     cissdmCustomerCostCenterCode: data.cissdmCustomerCostCenterCode ? data.cissdmCustomerCostCenterCode.substring(0, 20) : null,
     systemCreatedAt: data.SystemCreatedAt ? new Date(data.SystemCreatedAt) : null,
-    lastModifiedDateTime: data.lastModifiedDateTime ? new Date(data.lastModifiedDateTime) : null,
+    lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
     apiSource: 'tmc',
   });
 }
@@ -1675,14 +1665,14 @@ private transformJob(data: any): Job {
     billToCustomerNo: data.billToCustomerNo || null,
     status: data.status || null,
     personResponsible: data.personResponsible || null,
-    nextInvoiceDate:
-      data.nextInvoiceDate && data.nextInvoiceDate !== '0001-01-01'
-        ? new Date(data.nextInvoiceDate)
-        : null,
+    nextInvoiceDate: 
+    data.nextInvoiceDate && data.nextInvoiceDate !== '0001-01-01' 
+      ? this.parseDateString(data.nextInvoiceDate) 
+      : null,
     jobPostingGroup: data.jobPostingGroup || null,
     searchDescription: data.searchDescription || null,
     systemCreatedAt: data.SystemCreatedAt ? new Date(data.SystemCreatedAt) : null,
-    lastModifiedDateTime: data.lastModifiedDateTime ? new Date(data.lastModifiedDateTime) : null,
+    lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
     apiSource: 'tmc',
   });
 }
@@ -1736,8 +1726,8 @@ private transformBillingScheduleLine(data: any): BillingScheduleLine {
     qty: data.Qty || null,
     amount: data.Amount || null,
     billingFrequency: data.BillingFrequency || null,
-    billingStartDate: data.BillingStartDate ? new Date(data.BillingStartDate) : null,
-    billingEndDate: data.BillingEndDate ? new Date(data.BillingEndDate) : null,
+    billingStartDate: this.parseDateString(data.BillingStartDate) || null,
+    billingEndDate: this.parseDateString(data.BillingEndDate) || null,
     interval: data.Interval || null,
     taxGroupCode: data.TaxGroupCode || null,
     taxLiable: data.TaxLiable || null,
@@ -1752,7 +1742,7 @@ private transformBillingScheduleLine(data: any): BillingScheduleLine {
     bssiCalculationMethod: data.BssiCalculationMethod || null,
     bssiDayofInvoiceDate: data.BssiDayofInvoiceDate || null,
     bssiNumofPeriod: data.BssiNumofPeriod || null,
-    bssiAlignmentDate: data.BssiAlignmentDate ? new Date(data.BssiAlignmentDate) : null,
+    bssiAlignmentDate: this.parseDateString(data.BssiAlignmentDate) || null,
     bssiEstimatedQty: data.BssiEstimatedQty || null,
     bssiStatus: data.BssiStatus || null,
     bssiUdfL1: data.Bssi_UDF_L1 || null,
@@ -1760,7 +1750,7 @@ private transformBillingScheduleLine(data: any): BillingScheduleLine {
     bssiUdfL3: data.Bssi_UDF_L3 || null,
     bssiUdfL4: data.Bssi_UDF_L4 || null,
     bssiUdfL5: data.Bssi_UDF_L5 || null,
-    bssiUdfL6: data.Bssi_UDF_L6 ? new Date(data.Bssi_UDF_L6) : null,
+    bssiUdfL6: this.parseDateString(data.Bssi_UDF_L6) || null,
     bssiUdfL7: data.Bssi_UDF_L7 || null,
     bssiUdfL8: data.Bssi_UDF_L8 || null,
     bssiUdfL9: data.Bssi_UDF_L9 || null,
@@ -1768,10 +1758,10 @@ private transformBillingScheduleLine(data: any): BillingScheduleLine {
     bssiUdfL11: data.Bssi_UDF_L11 || null,
     bssiUdfL12: data.Bssi_UDF_L12 || null,
     bssiUdfL13: data.Bssi_UDF_L13 || null,
-    bssiUdfL14: data.Bssi_UDF_L14 ? new Date(data.Bssi_UDF_L14) : null,
-    bssiUdfL15: data.Bssi_UDF_L15 ? new Date(data.Bssi_UDF_L15) : null,
-    bssiUdfL16: data.Bssi_UDF_L16 ? new Date(data.Bssi_UDF_L16) : null,
-    bssiUdfL17: data.Bssi_UDF_L17 ? new Date(data.Bssi_UDF_L17) : null,
+    bssiUdfL14: this.parseDateString(data.Bssi_UDF_L14) || null,
+    bssiUdfL15: this.parseDateString(data.Bssi_UDF_L15) || null,
+    bssiUdfL16: this.parseDateString(data.Bssi_UDF_L16) || null,
+    bssiUdfL17: this.parseDateString(data.Bssi_UDF_L17) || null,
     bssiUdfL18: data.Bssi_UDF_L18 || null,
     bssiUdfL19: data.Bssi_UDF_L19 || null,
     shortcutDimension1Code: data.ShortcutDimension1Code || null,

@@ -71,9 +71,10 @@ export class TmcApiService {
         // Check for nextLink
         nextUrl = response.data['@odata.nextLink'];
   
-        // After the first request, remove 'params' from 'config' as 'nextUrl' includes all query parameters
+        // After the first request, refresh headers and retain params
         config = {
           headers: await this.dynamicsAuthService.getHeaders(), // Refresh headers
+          params,
         };
   
         // Log the number of records fetched so far

@@ -1,12 +1,6 @@
 // src/modules/sync/entities/customer-ledger-entry.entity.ts
 
-import {
-    Column,
-    CreateDateColumn,
-    Entity,
-    PrimaryColumn,
-    UpdateDateColumn,
-} from 'typeorm';
+import { Column, CreateDateColumn, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
   
   @Entity('customer_ledger_entry')
   export class CustomerLedgerEntry {
@@ -365,4 +359,5 @@ import {
   
     @UpdateDateColumn({ name: 'updated_at' })
     updatedAt: Date;
+
   }
