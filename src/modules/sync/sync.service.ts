@@ -36,6 +36,8 @@ import { V2ApiService } from './v2-api/v2-api.service';
 export class SyncService {
   private readonly logger = new Logger(SyncService.name);
 
+  private entityRepositoryMap: { [key: string]: { repository: Repository<any>, createdAtField: string } };
+
   constructor(
     // API Services
     private readonly v2ApiService: V2ApiService,
@@ -104,7 +106,26 @@ export class SyncService {
 
     @InjectRepository(BillingScheduleLine)
     private readonly billingScheduleLineRepository: Repository<BillingScheduleLine>,
-  ) {}
+  ) {
+    // Initialize the entityRepositoryMap
+    this.entityRepositoryMap = {
+      'customers': { repository: this.customerRepository, createdAtField: 'createdAt' },
+      'vendor': { repository: this.vendorRepository, createdAtField: 'createdAt' },
+      'item': { repository: this.itemRepository, createdAtField: 'createdAt' },
+      'sales_invoice': { repository: this.salesInvoiceRepository, createdAtField: 'createdAt' },
+      'sales_credit_memo': { repository: this.salesCreditMemoRepository, createdAtField: 'createdAt' },
+      'purchase_invoices': { repository: this.purchaseInvoiceRepository, createdAtField: 'createdAt' },
+      'purchase_orders': { repository: this.purchaseOrderRepository, createdAtField: 'createdAt' },
+      'purchase_credit_memos': { repository: this.purchaseCreditMemoRepository, createdAtField: 'createdAt' },
+      'general_ledger_entries': { repository: this.generalLedgerEntryRepository, createdAtField: 'createdAt' },
+      'customer_ledger_entry': { repository: this.customerLedgerEntryRepository, createdAtField: 'createdAt' },
+      'account': { repository: this.accountRepository, createdAtField: 'createdAt' },
+      'bank_account': { repository: this.bankAccountRepository, createdAtField: 'createdAt' },
+      'ship_to_address': { repository: this.shipToAddressRepository, createdAtField: 'createdAt' },
+      'job': { repository: this.jobRepository, createdAtField: 'createdAt' },
+      'billing_schedule_line': { repository: this.billingScheduleLineRepository, createdAtField: 'createdAt' }
+    };
+  }
 
   /**
    * Scheduled Cron Job to Synchronize Data
@@ -126,33 +147,34 @@ export class SyncService {
     await this.syncAll(true);
   }
 
-/**
- * Synchronize All Data
- */
-async syncAll(fullSync: boolean = false) {
-  try {
-    // Synchronize customers first
-    await this.syncCustomers(fullSync);
-    // Synchronize other entities
-    await this.syncVendors(fullSync);
-    await this.syncAccounts(fullSync);
-    await this.syncItems(fullSync); 
-    await this.syncPurchaseInvoices(fullSync);
-    await this.syncPurchaseOrders(fullSync);
-    await this.syncPurchaseCreditMemos(fullSync);
-    await this.syncSalesInvoices(fullSync);
-    await this.syncSalesCreditMemos(fullSync);
-    await this.syncGeneralLedgerEntries(fullSync);
-    await this.syncCustomerLedgerEntries(fullSync);
-    await this.syncBankAccounts(fullSync);
-    await this.syncShipToAddresses(fullSync);
-    await this.syncJobs(fullSync);
-    await this.syncBillingScheduleLines(); // Always performs a full sync    this.logger.debug('Synchronization completed successfully.');
-  } catch (error) {
-    this.logger.error('Synchronization failed', error.stack);
-    throw new Error('Synchronization failed.');
+  /**
+   * Synchronize All Data
+   */
+  async syncAll(fullSync: boolean = false) {
+    try {
+      // Synchronize customers first
+      await this.syncCustomers(fullSync);
+      // Synchronize other entities
+      await this.syncVendors(fullSync);
+      await this.syncAccounts(fullSync);
+      await this.syncItems(fullSync); 
+      await this.syncPurchaseInvoices(fullSync);
+      await this.syncPurchaseOrders(fullSync);
+      await this.syncPurchaseCreditMemos(fullSync);
+      await this.syncSalesInvoices(fullSync);
+      await this.syncSalesCreditMemos(fullSync);
+      await this.syncGeneralLedgerEntries(fullSync);
+      await this.syncCustomerLedgerEntries(fullSync);
+      await this.syncBankAccounts(fullSync);
+      await this.syncShipToAddresses(fullSync);
+      await this.syncJobs(fullSync);
+      await this.syncBillingScheduleLines(); // Always performs a full sync    
+      this.logger.debug('Synchronization completed successfully.');
+    } catch (error) {
+      this.logger.error('Synchronization failed', error.stack);
+      throw new Error('Synchronization failed.');
+    }
   }
-}
 
 // ----------------------------------
 // Customer Synchronization
@@ -1285,32 +1307,58 @@ private transformV2PurchaseCreditMemoLine(
 // G/L Entries Synchronization
 // ----------------------------------
 async syncGeneralLedgerEntries(fullSync: boolean = false): Promise<void> {
-  this.logger.debug(`Synchronizing general ledger entries (fullSync=${fullSync})...`);
+  this.logger.debug(`Starting synchronization of general ledger entries (fullSync=${fullSync})...`);
   const entityName = 'general_ledger_entries';
+  const targetDocumentNumber = 'BD0000344';
 
   try {
     const lastSync = fullSync ? null : await this.getLastSyncTimestamp(entityName);
 
-    // Ensure accounts are synchronized before G/L entries
-    // await this.syncAccounts(fullSync); // Uncomment if needed and implement accordingly
-
-    // Fetching G/L entries from the V2 API since the last sync
+    // Fetch G/L entries from the API
     const v2GLEntries = await this.v2ApiService.getGeneralLedgerEntries(lastSync);
     this.logger.debug(`Fetched ${v2GLEntries.length} general ledger entries from V2 API`);
 
-    // Transform and save each G/L entry
-    for (const v2GLEntry of v2GLEntries) {
-      const glEntity = this.transformV2GeneralLedgerEntry(v2GLEntry);
-      await this.generalLedgerEntryRepository.save(glEntity);
+    // Verify if the target document number is in the fetched data
+    const targetEntries = v2GLEntries.filter(entry => entry.documentNumber === targetDocumentNumber);
+    if (targetEntries.length > 0) {
+      this.logger.debug(`Found ${targetEntries.length} entries in API response with document number ${targetDocumentNumber}`);
+    } else {
+      this.logger.warn(`No entries found in API response with document number ${targetDocumentNumber}`);
     }
 
-    // No need to handle deletions as G/L entries are not deleted in Dynamics
+    for (const v2GLEntry of v2GLEntries) {
+      if (v2GLEntry.documentNumber === targetDocumentNumber) {
+        this.logger.debug(`Processing target GL entry: ID ${v2GLEntry.id}, DocumentNumber: ${v2GLEntry.documentNumber}`);
+      }
 
-    // Update the last sync timestamp after successful synchronization
+      try {
+        // Transform entry
+        const glEntity = this.transformV2GeneralLedgerEntry(v2GLEntry);
+        if (glEntity.documentNumber === targetDocumentNumber) {
+          this.logger.debug(`Transformed target GL entry: ID ${glEntity.id}, CreditAmount: ${glEntity.creditAmount}, DebitAmount: ${glEntity.debitAmount}`);
+        }
+
+        // Save entry
+        await this.generalLedgerEntryRepository.save(glEntity);
+        
+        // Verify save success
+        const savedEntry = await this.generalLedgerEntryRepository.findOne({ where: { id: glEntity.id } });
+        if (savedEntry) {
+          this.logger.debug(`Confirmed save of target GL entry: ID ${savedEntry.id}, DocumentNumber: ${savedEntry.documentNumber}`);
+        } else if (glEntity.documentNumber === targetDocumentNumber) {
+          this.logger.error(`Failed to confirm save for target GL entry: ID ${glEntity.id}, DocumentNumber: ${glEntity.documentNumber}`);
+        }
+      } catch (saveError) {
+        if (v2GLEntry.documentNumber === targetDocumentNumber) {
+          this.logger.error(`Error saving target GL entry: ID ${v2GLEntry.id}, DocumentNumber: ${v2GLEntry.documentNumber}`, saveError.stack);
+        }
+      }
+    }
+
     await this.updateLastSyncTimestamp(entityName);
-    this.logger.debug(`Synchronization of general ledger entries completed.`);
+    this.logger.debug(`Completed synchronization of general ledger entries.`);
   } catch (error) {
-    this.logger.error('Error during general ledger entry synchronization', error);
+    this.logger.error('Error during general ledger entry synchronization', error.stack);
     throw error;
   }
 }
@@ -1445,15 +1493,31 @@ private transformTmcCustomerLedgerEntry(data: any): CustomerLedgerEntry {
   }
 
   private async updateLastSyncTimestamp(entityName: string): Promise<void> {
-    const currentDateTime = new Date();
+    const entityInfo = this.entityRepositoryMap[entityName];
+    if (!entityInfo) {
+      this.logger.warn(`Repository not found for entity name: ${entityName}`);
+      return;
+    }
+
+    const repository = entityInfo.repository;
+    const createdAtField = entityInfo.createdAtField;
+
+    // Now get the max created_at from the repository
+    const maxCreatedAtResult = await repository.createQueryBuilder('entity')
+      .select(`MAX(entity.${createdAtField})`, 'max')
+      .getRawOne();
+
+    const maxCreatedAt = maxCreatedAtResult && maxCreatedAtResult.max ? new Date(maxCreatedAtResult.max) : null;
+
+    // Now update the sync_status record
     let syncStatus = await this.syncStatusRepository.findOne({ where: { entityName } });
     if (!syncStatus) {
       syncStatus = this.syncStatusRepository.create({
         entityName,
-        lastSyncDateTime: currentDateTime,
+        lastSyncDateTime: maxCreatedAt || new Date('1900-01-01T00:00:00Z'),
       });
     } else {
-      syncStatus.lastSyncDateTime = currentDateTime;
+      syncStatus.lastSyncDateTime = maxCreatedAt || new Date('1900-01-01T00:00:00Z');
     }
     await this.syncStatusRepository.save(syncStatus);
   }
@@ -1878,7 +1942,7 @@ private transformBillingScheduleLine(data: any): BillingScheduleLine {
       return new Date(year, month - 1, day);
     }
   }
-
+  
 // Helper function to transform zero GUIDs to null
 private transformNullableGuid(guid: string): string | null {
   if (guid && guid !== '00000000-0000-0000-0000-000000000000') {

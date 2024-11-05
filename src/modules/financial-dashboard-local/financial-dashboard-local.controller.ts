@@ -13,5 +13,27 @@ export class FinancialDashboardLocalController {
     return data;
   }
 
+  @Get('activity-feed')
+  async getActivityFeed() {
+    const activities = await this.dashboardService.getRecentActivities();
+    return activities;
+  }
+
+  @Get('new-activities')
+  async getNewActivities() {
+    const activities = await this.dashboardService.getNewActivities();
+    return activities;
+  }
+
+  @Get('customer-payment-history')
+  async getCustomerPaymentHistory(
+    @Query('customerNumber') customerNumber: string,
+    @Query('startDate') startDate: string, // Optional
+    @Query('endDate') endDate: string, // Optional
+  ) {
+    // You can add validation for customerNumber here if needed
+    return this.dashboardService.getCustomerPaymentHistory(customerNumber, startDate, endDate);
+  }
+
   // Define other endpoints as needed
 }

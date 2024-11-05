@@ -337,25 +337,20 @@ export class V2ApiService {
     return await this.getRequest(url, params);
   }
 
-  /**
-   * Fetch general ledger entries from the API with optional last sync date for incremental sync.
-   */
-  async getGeneralLedgerEntries(lastSyncDateTime?: Date): Promise<any[]> {
-    const url = `${this.baseUrl()}/generalLedgerEntries`;
-    const params: any = {
-      // Removed $select and $top to retrieve all fields and allow default pagination
-    };
-    if (lastSyncDateTime) {
-      params.$filter = `lastModifiedDateTime gt ${lastSyncDateTime.toISOString()}`;
-    } else {
-      // If no lastSyncDateTime provided, you might want to limit the date range to prevent overloading
-      // For example, fetch entries from the last 30 days
-      const dateFrom = new Date();
-      dateFrom.setDate(dateFrom.getDate() - 30);
-      params.$filter = `postingDate gt ${dateFrom.toISOString()}`;
-    }
-    return await this.getRequest(url, params);
+/**
+ * Fetch general ledger entries from the API with optional last sync date for incremental sync.
+ */
+async getGeneralLedgerEntries(lastSyncDateTime?: Date): Promise<any[]> {
+  const url = `${this.baseUrl()}/generalLedgerEntries`;
+  const params: any = {};
+
+  // Only apply filtering for incremental syncs
+  if (lastSyncDateTime) {
+    params.$filter = `lastModifiedDateTime gt ${lastSyncDateTime.toISOString()}`;
   }
+
+  return await this.getRequest(url, params);
+}
 
   /**
    * Fetch accounts from the API with optional last sync date for incremental sync.
@@ -411,5 +406,5 @@ export class V2ApiService {
       return null;
     }
   }
-  
+
 }
