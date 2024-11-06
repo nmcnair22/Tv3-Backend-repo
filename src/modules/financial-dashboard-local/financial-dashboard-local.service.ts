@@ -2,7 +2,8 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, In, MoreThan, Repository } from 'typeorm';
+import { format, subDays, subMonths, subWeeks } from 'date-fns';
+import { Between, In, LessThanOrEqual, MoreThan, Repository } from 'typeorm';
 import { DynamicsReportsService } from '../dynamics/dynamics-reports.service';
 import { Account } from '../sync/entities/account.entity';
 import { CustomerLedgerEntry } from '../sync/entities/customer-ledger-entry.entity';
@@ -615,103 +616,375 @@ export class FinancialDashboardLocalService {
     };
   }
 
-  /**
-   * Retrieves the payment history for a specific customer.
-   * @param customerNumber - The customer number.
-   * @param startDate - Optional start date in 'YYYY-MM-DD' format.
-   * @param endDate - Optional end date in 'YYYY-MM-DD' format.
-   * @returns An array of payment history records.
-   */
-  async getCustomerPaymentHistory(
-    customerNumber: string,
-    startDate?: string,
-    endDate?: string,
-  ): Promise<any[]> {
-    const loggerContext = 'getCustomerPaymentHistory';
+/**
+ * Retrieves the payment history for a specific customer.
+ * @param customerNumber - The customer number.
+ * @param startDate - Optional start date in 'YYYY-MM-DD' format.
+ * @param endDate - Optional end date in 'YYYY-MM-DD' format.
+ * @returns An object containing payments, unpaidInvoices, and partiallyPaidInvoices.
+ */
+async getCustomerPaymentHistory(
+  customerNumber: string,
+  startDate?: string,
+  endDate?: string,
+): Promise<any> {
+  const loggerContext = 'getCustomerPaymentHistory';
 
-    if (!customerNumber) {
-      this.logger.error('Customer number is required', loggerContext);
-      throw new Error('customerNumber parameter is required');
+  if (!customerNumber) {
+    this.logger.error('Customer number is required', loggerContext);
+    throw new Error('customerNumber parameter is required');
+  }
+
+  // Parse dates
+  const start = startDate ? new Date(startDate) : new Date('1900-01-01');
+  const end = endDate ? new Date(endDate) : new Date();
+
+  // Adjust end date to include the entire day
+  end.setHours(23, 59, 59, 999);
+
+  this.logger.debug(
+    `Fetching payment history for customer ${customerNumber} from ${start.toISOString()} to ${end.toISOString()}`,
+    loggerContext,
+  );
+
+  // **1. Fetch Payments**
+  const paymentEntries = await this.customerLedgerEntryRepository.find({
+    where: {
+      documentType: 'Payment',
+      postingDate: Between(start, end),
+      customerNo: customerNumber,
+    },
+    order: { postingDate: 'DESC' },
+  });
+
+  // Map payments to their related invoices
+  const paymentsWithInvoices = await this.mapPaymentsToInvoices(paymentEntries, end);
+
+  // **2. Fetch Open Invoices**
+  const openInvoices = await this.salesInvoiceRepository.find({
+    where: {
+      customerNumber,
+      status: 'Open',
+      invoiceDate: LessThanOrEqual(end),
+    },
+  });
+
+  // **3. Determine Payment Status of Open Invoices**
+  const { unpaidInvoices, partiallyPaidInvoices } = await this.determineInvoicePaymentStatus(
+    openInvoices,
+    customerNumber,
+    end,
+  );
+
+  // **4. Return Combined Data**
+  return {
+    payments: paymentsWithInvoices,
+    unpaidInvoices,
+    partiallyPaidInvoices,
+  };
+}
+
+// Helper method to map payments to invoices
+private async mapPaymentsToInvoices(
+  paymentEntries: CustomerLedgerEntry[],
+  asOfDate: Date,
+): Promise<any[]> {
+  const paymentEntryNos = paymentEntries.map((entry) => entry.entryNo);
+
+  // Fetch all invoices that were closed by these payments
+  const invoicesApplied = await this.customerLedgerEntryRepository.find({
+    where: {
+      closedByEntryNo: In(paymentEntryNos),
+      documentType: 'Invoice',
+      postingDate: LessThanOrEqual(asOfDate),
+    },
+  });
+
+  // Build a map of payment entries for easy access
+  const paymentEntryMap = new Map<number, CustomerLedgerEntry>();
+  for (const paymentEntry of paymentEntries) {
+    paymentEntryMap.set(paymentEntry.entryNo, paymentEntry);
+  }
+
+  // Collect all invoice numbers to fetch their due dates
+  const invoiceNumbers = invoicesApplied.map((invoiceEntry) => invoiceEntry.documentNo);
+
+  // Fetch SalesInvoice records to get the due dates
+  const salesInvoices = await this.salesInvoiceRepository.find({
+    where: {
+      number: In(invoiceNumbers),
+    },
+    select: ['number', 'dueDate'],
+  });
+
+  // Create a map of invoice number to due date
+  const invoiceDueDateMap = new Map<string, Date>();
+  for (const invoice of salesInvoices) {
+    invoiceDueDateMap.set(invoice.number, invoice.dueDate);
+  }
+
+  const paymentsWithInvoicesMap = new Map<number, any>();
+
+  for (const invoiceEntry of invoicesApplied) {
+    const paymentEntry = paymentEntryMap.get(invoiceEntry.closedByEntryNo);
+    if (paymentEntry) {
+      if (!paymentsWithInvoicesMap.has(paymentEntry.entryNo)) {
+        paymentsWithInvoicesMap.set(paymentEntry.entryNo, {
+          paymentDate: paymentEntry.postingDate,
+          paymentAmount: Math.abs(paymentEntry.amount),
+          description: paymentEntry.description,
+          paymentEntryNo: paymentEntry.entryNo,
+          relatedInvoices: [],
+        });
+      }
+
+      // Include the due date in invoiceData
+      const invoiceData = {
+        invoiceNumber: invoiceEntry.documentNo,
+        invoiceDate: invoiceEntry.documentDate,
+        amount: invoiceEntry.debitAmount,
+        dueDate: invoiceDueDateMap.get(invoiceEntry.documentNo) || null,
+      };
+
+      const paymentData = paymentsWithInvoicesMap.get(paymentEntry.entryNo);
+      paymentData.relatedInvoices.push(invoiceData);
+    }
+  }
+
+  return Array.from(paymentsWithInvoicesMap.values());
+}
+
+// Helper method to determine payment status of invoices
+private async determineInvoicePaymentStatus(
+  openInvoices: SalesInvoice[],
+  customerNumber: string,
+  asOfDate: Date,
+): Promise<{ unpaidInvoices: any[]; partiallyPaidInvoices: any[] }> {
+  // Collect all invoice numbers
+  const invoiceNumbers = openInvoices.map((invoice) => invoice.number);
+
+  // Fetch ledger entries for these invoices up to 'asOfDate'
+  const ledgerEntries = await this.customerLedgerEntryRepository.find({
+    where: {
+      documentNo: In(invoiceNumbers),
+      customerNo: customerNumber,
+      documentType: 'Invoice',
+      postingDate: LessThanOrEqual(asOfDate),
+    },
+  });
+
+  // Map ledger entries by invoice number
+  const ledgerEntriesByInvoice = new Map<string, CustomerLedgerEntry[]>();
+  for (const entry of ledgerEntries) {
+    if (!ledgerEntriesByInvoice.has(entry.documentNo)) {
+      ledgerEntriesByInvoice.set(entry.documentNo, []);
+    }
+    ledgerEntriesByInvoice.get(entry.documentNo).push(entry);
+  }
+
+  const unpaidInvoices = [];
+  const partiallyPaidInvoices = [];
+
+  for (const invoice of openInvoices) {
+    const entries = ledgerEntriesByInvoice.get(invoice.number) || [];
+
+    let totalAmount = 0;
+    let amountRemaining = 0;
+
+    for (const entry of entries) {
+      totalAmount += parseFloat(entry.debitAmount.toString()) || 0;
+      amountRemaining += parseFloat(entry.remainingAmount.toString()) || 0;
     }
 
-    const start = startDate ? new Date(startDate) : new Date('1900-01-01');
-    const end = endDate ? new Date(endDate) : new Date();
+    const amountPaid = totalAmount - amountRemaining;
 
-    this.logger.debug(
-      `Fetching payment history for customer ${customerNumber} from ${start.toISOString()} to ${end.toISOString()}`,
-      loggerContext,
-    );
+    if (amountPaid > 0 && amountRemaining > 0) {
+      // Partially paid
+      partiallyPaidInvoices.push({
+        invoiceNumber: invoice.number,
+        invoiceDate: invoice.invoiceDate,
+        dueDate: invoice.dueDate,
+        totalAmount,
+        amountPaid,
+        amountRemaining,
+        status: 'Partially Paid',
+      });
+    } else if (amountPaid === 0 && amountRemaining > 0) {
+      // Unpaid
+      unpaidInvoices.push({
+        invoiceNumber: invoice.number,
+        invoiceDate: invoice.invoiceDate,
+        dueDate: invoice.dueDate,
+        totalAmount,
+        amountPaid: 0,
+        amountRemaining,
+        status: 'Unpaid',
+      });
+    }
+  }
 
-    // Fetch payments for the customer in the given date range
-    const paymentEntries = await this.customerLedgerEntryRepository.find({
-      where: {
-        documentType: 'Payment',
-        postingDate: Between(start, end),
-        customerNo: customerNumber,
-      },
-      order: { postingDate: 'DESC' },
+  return { unpaidInvoices, partiallyPaidInvoices };
+}
+
+/**
+ * Calculates the credit score for a customer as of a specific date.
+ * @param customerNumber - The customer number.
+ * @param asOfDate - Optional date up to which to consider data.
+ * @returns The credit score and contributing factors.
+ */
+async calculateCreditScore(customerNumber: string, asOfDate?: Date): Promise<any> {
+  const loggerContext = 'calculateCreditScore';
+
+  // Use the provided asOfDate or default to the current date
+  const effectiveDate = asOfDate ? new Date(asOfDate) : new Date();
+
+  // Fetch payment history and invoices up to the asOfDate
+  const paymentHistory = await this.getCustomerPaymentHistory(
+    customerNumber,
+    undefined, // startDate is not needed
+    effectiveDate.toISOString().split('T')[0], // endDate as ISO string in 'YYYY-MM-DD' format
+  );
+  const { payments, unpaidInvoices, partiallyPaidInvoices } = paymentHistory;
+
+  // Initialize variables
+  let totalPurchaseAmount = 0;
+  let totalTimelinessPoints = 0;
+  let maxTimelinessPoints = 0;
+  let outstandingBalance = 0;
+
+  // Constants
+  const k1 = 2; // Points per day early
+  const k2 = 10; // Points for on-time payment
+  const k3 = 1; // Points per day late
+
+  // **Calculate Total Purchase Amount**
+  payments.forEach((payment) => {
+    payment.relatedInvoices.forEach((invoice) => {
+      totalPurchaseAmount += parseFloat(invoice.amount);
     });
+  });
 
-    if (paymentEntries.length === 0) {
-      this.logger.debug(`No payments found for customer ${customerNumber}`, loggerContext);
-      return [];
-    }
+  // **Calculate Payment Timeliness Points**
+  for (const payment of payments) {
+    for (const invoice of payment.relatedInvoices) {
+      const dueDate = new Date(invoice.dueDate);
+      const paymentDate = new Date(payment.paymentDate);
 
-    // Collect entry numbers
-    const paymentEntryNos = paymentEntries.map((entry) => entry.entryNo);
+      // Only consider invoices and payments up to the effective date
+      if (paymentDate > effectiveDate) continue;
 
-    // Fetch invoices where closedByEntryNo is in paymentEntryNos
-    const invoicesApplied = await this.customerLedgerEntryRepository.find({
-      where: {
-        closedByEntryNo: In(paymentEntryNos),
-        customerNo: customerNumber,
-        documentType: 'Invoice',
-      },
-    });
+      const timeDiff = dueDate.getTime() - paymentDate.getTime();
+      const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
 
-    // Map paymentEntryNo to paymentEntry
-    const paymentEntryMap = new Map<number, any>();
-    for (const paymentEntry of paymentEntries) {
-      paymentEntryMap.set(paymentEntry.entryNo, paymentEntry);
-    }
-
-    // Map payment entries to their associated invoices
-    const paymentsWithInvoicesMap = new Map<number, any>();
-
-    for (const invoiceEntry of invoicesApplied) {
-      const paymentEntry = paymentEntryMap.get(invoiceEntry.closedByEntryNo);
-      if (paymentEntry) {
-        if (!paymentsWithInvoicesMap.has(paymentEntry.entryNo)) {
-          paymentsWithInvoicesMap.set(paymentEntry.entryNo, {
-            paymentDate: paymentEntry.postingDate,
-            paymentAmount: Math.abs(paymentEntry.amount),
-            description: paymentEntry.description,
-            paymentEntryNo: paymentEntry.entryNo,
-            relatedInvoices: [],
-          });
+      if (!isNaN(daysDiff)) {
+        if (daysDiff > 0) {
+          // Early Payment
+          totalTimelinessPoints += daysDiff * k1;
+        } else if (daysDiff === 0) {
+          // On-Time Payment
+          totalTimelinessPoints += k2;
+        } else {
+          // Late Payment
+          totalTimelinessPoints += daysDiff * k3; // daysDiff is negative
         }
-
-        const invoiceData = {
-          invoiceNumber: invoiceEntry.documentNo,
-          invoiceDate: invoiceEntry.documentDate,
-          amount: invoiceEntry.debitAmount,
-        };
-
-        const paymentData = paymentsWithInvoicesMap.get(paymentEntry.entryNo);
-        paymentData.relatedInvoices.push(invoiceData);
+        // Assume maximum possible points is early by 30 days per invoice
+        maxTimelinessPoints += 30 * k1;
       }
     }
-
-    // Convert the Map to an array
-    const paymentsWithInvoices = Array.from(paymentsWithInvoicesMap.values());
-
-    // Sort payments by paymentDate descending
-    paymentsWithInvoices.sort(
-      (a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime(),
-    );
-
-    return paymentsWithInvoices;
   }
+
+  // **Calculate Outstanding Balance**
+  outstandingBalance = unpaidInvoices.reduce((sum, invoice) => {
+    if (new Date(invoice.invoiceDate) <= effectiveDate) {
+      return sum + invoice.totalAmount;
+    }
+    return sum;
+  }, 0);
+
+  outstandingBalance += partiallyPaidInvoices.reduce((sum, invoice) => {
+    if (new Date(invoice.invoiceDate) <= effectiveDate) {
+      return sum + invoice.amountRemaining;
+    }
+    return sum;
+  }, 0);
+
+  // **Normalize Factors**
+  const maxPurchaseAmount = 1000000; // Define as per your data
+  const maxOutstandingBalance = 500000; // Define as per your data
+
+  const PAF = (totalPurchaseAmount / maxPurchaseAmount) * 100;
+  const PTF = (totalTimelinessPoints / maxTimelinessPoints) * 100;
+  const OBF = 100 - (outstandingBalance / maxOutstandingBalance) * 100;
+
+  // **Calculate Credit Score**
+  const baseScore = 600;
+  const w1 = 0.3;
+  const w2 = 0.5;
+  const w3 = 0.2;
+
+  let creditScore = baseScore + (w1 * PAF) + (w2 * PTF) + (w3 * OBF);
+
+  // Ensure the credit score is within 300-850
+  creditScore = Math.max(300, Math.min(creditScore, 850));
+
+  // **Return the Credit Score and Factors**
+  return {
+    creditScore: Math.round(creditScore),
+    factors: {
+      totalPurchaseAmount,
+      PAF: Math.round(PAF),
+      totalTimelinessPoints,
+      PTF: Math.round(PTF),
+      outstandingBalance,
+      OBF: Math.round(OBF),
+    },
+  };
+}
+
+/**
+ * Retrieves the credit score history for a customer over a specified date range.
+ * @param customerNumber - The customer number.
+ * @param startDate - The start date in 'YYYY-MM-DD' format.
+ * @param endDate - The end date in 'YYYY-MM-DD' format.
+ * @param interval - The interval for the history ('monthly', 'weekly', 'daily').
+ * @returns An array of credit scores with corresponding dates.
+ */
+async getCreditScoreHistory(
+  customerNumber: string,
+  startDate: string,
+  endDate: string,
+  interval: 'monthly' | 'weekly' | 'daily' = 'monthly',
+): Promise<any[]> {
+  const loggerContext = 'getCreditScoreHistory';
+
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const dates: Date[] = [];
+  let currentDate = end;
+
+  // Generate dates at the specified interval
+  while (currentDate >= start) {
+    dates.push(new Date(currentDate));
+    if (interval === 'monthly') {
+      currentDate = subMonths(currentDate, 1);
+    } else if (interval === 'weekly') {
+      currentDate = subWeeks(currentDate, 1);
+    } else if (interval === 'daily') {
+      currentDate = subDays(currentDate, 1);
+    }
+  }
+
+  const creditScores = [];
+  for (const date of dates.reverse()) {
+    const scoreData = await this.calculateCreditScore(customerNumber, date);
+    creditScores.push({
+      date: format(date, 'yyyy-MM-dd'),
+      creditScore: scoreData.creditScore,
+    });
+  }
+
+  return creditScores;
+}
 
 
   // Remove or comment out the following methods if they are no longer needed

@@ -28,12 +28,38 @@ export class FinancialDashboardLocalController {
   @Get('customer-payment-history')
   async getCustomerPaymentHistory(
     @Query('customerNumber') customerNumber: string,
-    @Query('startDate') startDate: string, // Optional
-    @Query('endDate') endDate: string, // Optional
-  ) {
-    // You can add validation for customerNumber here if needed
-    return this.dashboardService.getCustomerPaymentHistory(customerNumber, startDate, endDate);
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ): Promise<any> {
+    return this.dashboardService.getCustomerPaymentHistory(
+      customerNumber,
+      startDate,
+      endDate,
+    );
   }
 
+  @Get('customer-credit-score')
+  async getCustomerCreditScore(
+    @Query('customerNumber') customerNumber: string,
+    @Query('asOfDate') asOfDate?: string,
+  ): Promise<any> {
+    const date = asOfDate ? new Date(asOfDate) : undefined;
+    return this.dashboardService.calculateCreditScore(customerNumber, date);
+  }
+  
+  @Get('customer-credit-score-history')
+  async getCustomerCreditScoreHistory(
+    @Query('customerNumber') customerNumber: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Query('interval') interval: 'monthly' | 'weekly' | 'daily' = 'monthly',
+  ): Promise<any> {
+    return this.dashboardService.getCreditScoreHistory(
+      customerNumber,
+      startDate,
+      endDate,
+      interval,
+    );
+  }
   // Define other endpoints as needed
 }
