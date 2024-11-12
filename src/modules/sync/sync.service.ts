@@ -4,6 +4,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { CreditScoreService } from '../credit/credit-score.service';
+
 
 // Entity imports
 import { Account } from './entities/account.entity';
@@ -42,6 +44,7 @@ export class SyncService {
     // API Services
     private readonly v2ApiService: V2ApiService,
     private readonly tmcApiService: TmcApiService,
+    private readonly creditScoreService: CreditScoreService,
 
     // Repositories
     @InjectRepository(Customer)
@@ -168,8 +171,9 @@ export class SyncService {
       await this.syncBankAccounts(fullSync);
       await this.syncShipToAddresses(fullSync);
       await this.syncJobs(fullSync);
-      await this.syncBillingScheduleLines(); // Always performs a full sync    
-      this.logger.debug('Synchronization completed successfully.');
+      await this.syncBillingScheduleLines(); // Always performs a full sync
+      await this.creditScoreService.calculateAndUpdateCreditScores();    
+      this.logger.debug('Synchronization and credit score update completed successfully.');
     } catch (error) {
       this.logger.error('Synchronization failed', error.stack);
       throw new Error('Synchronization failed.');
@@ -1384,9 +1388,6 @@ private transformV2GeneralLedgerEntry(data: any): GeneralLedgerEntry {
   return glEntry;
 }
 
-// ----------------------------------
-// Customer Ledger Entries Synchronization
-// ----------------------------------
 // -------------------------------
 // Customer Ledger Entries Synchronization
 // -------------------------------
@@ -1942,7 +1943,7 @@ private transformBillingScheduleLine(data: any): BillingScheduleLine {
       return new Date(year, month - 1, day);
     }
   }
-  
+
 // Helper function to transform zero GUIDs to null
 private transformNullableGuid(guid: string): string | null {
   if (guid && guid !== '00000000-0000-0000-0000-000000000000') {

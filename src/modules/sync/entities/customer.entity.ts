@@ -9,6 +9,8 @@ import {
   PrimaryColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { PaymentHistory } from '../../sync/entities/payment-history.entity';
+import { CreditScoreHistory } from './credit-score-history.entity';
 import { SalesInvoice } from './sales-invoice.entity';
 
 @Entity('customer')
@@ -17,7 +19,7 @@ export class Customer {
   @PrimaryColumn({ type: 'char', length: 36 })
   id: string;
 
-  @Column({ name: 'customer_number', type: 'varchar', length: 20 })
+  @Column({ name: 'customerNumber', type: 'varchar', length: 50, unique: true })
   customerNumber: string;
 
   @Column({ name: 'display_name', type: 'varchar', length: 100 })
@@ -115,9 +117,75 @@ export class Customer {
   @Column({ name: 'api_source', type: 'varchar', length: 10 })
   apiSource: string;
 
+  /** 
+   * New Fields for Credit Scoring
+   */
+
+  /** Current Credit Score */
+  @Column({ name: 'credit_score', type: 'int', nullable: true, default: null })
+  creditScore?: number;
+
+  /** Current Credit Tier */
+  @Column({ name: 'credit_tier', type: 'varchar', length: 20, nullable: true, default: null })
+  creditTier?: string;
+
+  /** Total Spend */
+  @Column({ name: 'total_spend', type: 'decimal', precision: 15, scale: 2, nullable: false, default: 0 })
+  totalSpend: number;
+
+  /** Average Monthly Spend */
+  @Column({ name: 'average_monthly_spend', type: 'decimal', precision: 15, scale: 2, nullable: false, default: 0 })
+  averageMonthlySpend: number;
+
+  /** On-Time Payments */
+  @Column({ name: 'on_time_payments', type: 'int', nullable: false, default: 0 })
+  onTimePayments: number;
+
+  /** Early Payments */
+  @Column({ name: 'early_payments', type: 'int', nullable: false, default: 0 })
+  earlyPayments: number;
+
+  /** Late Payments */
+  @Column({ name: 'late_payments', type: 'int', nullable: false, default: 0 })
+  latePayments: number;
+
+  /** Late Payments 1-30 Days */
+  @Column({ name: 'late_payments_1_30', type: 'int', nullable: false, default: 0 })
+  latePayments1_30: number;
+
+  /** Late Payments 31-60 Days */
+  @Column({ name: 'late_payments_31_60', type: 'int', nullable: false, default: 0 })
+  latePayments31_60: number;
+
+  /** Late Payments 61-90 Days */
+  @Column({ name: 'late_payments_61_90', type: 'int', nullable: false, default: 0 })
+  latePayments61_90: number;
+
+  /** Late Payments 90+ Days */
+  @Column({ name: 'late_payments_90_plus', type: 'int', nullable: false, default: 0 })
+  latePayments90Plus: number;
+
+  /** Outstanding Balance */
+  @Column({ name: 'outstanding_balance', type: 'decimal', precision: 15, scale: 2, nullable: false, default: 0 })
+  outstandingBalance: number;
+
+  /** Balance to Spend Ratio */
+  @Column({ name: 'balance_to_spend_ratio', type: 'decimal', precision: 5, scale: 2, nullable: false, default: 0 })
+  balanceToSpendRatio: number;
+
+  /**
+   * One-to-Many relationship with CreditScoreHistory
+   */
+  @OneToMany(() => CreditScoreHistory, (history: CreditScoreHistory) => history.customer)
+  creditScoreHistories: CreditScoreHistory[];
+
   /** One-to-Many relationship with SalesInvoice */
-  @OneToMany(() => SalesInvoice, (salesInvoice) => salesInvoice.customer)
+  @OneToMany(() => SalesInvoice, (salesInvoice: SalesInvoice) => salesInvoice.customer)
   salesInvoices: SalesInvoice[];
+
+  /** One-to-Many relationship with PaymentHistory */
+  @OneToMany(() => PaymentHistory, (payment: PaymentHistory) => payment.customer)
+  paymentHistories: PaymentHistory[];
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

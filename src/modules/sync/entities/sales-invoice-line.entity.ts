@@ -11,11 +11,6 @@ import {
 } from 'typeorm';
 import { Item } from './item.entity';
 import { SalesInvoice } from './sales-invoice.entity';
-// Import Account, UnitOfMeasure, ItemVariant, Location if they are defined
-// import { Account } from './account.entity';
-// import { UnitOfMeasure } from './unit-of-measure.entity';
-// import { ItemVariant } from './item-variant.entity';
-// import { Location } from './location.entity';
 
 @Entity('sales_invoice_line')
 export class SalesInvoiceLine {
@@ -254,6 +249,10 @@ export class SalesInvoiceLine {
   /** API Source */
   @Column({ name: 'api_source', type: 'varchar', length: 10, nullable: true })
   apiSource?: string;
+
+  /** New Field: Product Category */
+  @Column({ name: 'product_category', type: 'varchar', length: 100, nullable: true })
+  productCategory?: string;
 
   /** Many-to-One relationship with SalesInvoice */
   @ManyToOne(

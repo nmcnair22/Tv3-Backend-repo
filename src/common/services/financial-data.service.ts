@@ -1,14 +1,17 @@
 // src/common/services/financial-data.service.ts
 
-import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Invoice, InvoiceLine } from '../../common/types/invoice.types';
 import { DynamicsAccountService } from '../../modules/dynamics/dynamics-account.service';
 import { DynamicsCreditService } from '../../modules/dynamics/dynamics-credit.service';
+import { DynamicsCustomerService } from '../../modules/dynamics/dynamics-customer.service';
 import { DynamicsGlEntryService } from '../../modules/dynamics/dynamics-glentry.service';
 import { DynamicsInvoiceService } from '../../modules/dynamics/dynamics-invoice.service';
 import { DynamicsPaymentService } from '../../modules/dynamics/dynamics-payment.service';
 import { DynamicsReportsService } from '../../modules/dynamics/dynamics-reports.service';
 import { AgedReceivableItem } from '../types/aged-receivables.types';
+import { CustomerFinancialDetail } from '../types/customer-financial-detail.types';
+
 
 interface PaymentHistoryRecord {
   paymentDate: string;
@@ -33,6 +36,7 @@ export class FinancialDataService {
     private readonly dynamicsGlEntryService: DynamicsGlEntryService,
     private readonly dynamicsPaymentService: DynamicsPaymentService,
     private readonly dynamicsCreditService: DynamicsCreditService,
+    private readonly dynamicsCustomerService: DynamicsCustomerService,
   ) {}
 
 /**
@@ -305,5 +309,27 @@ async getTotalCredits(startDate: string, endDate: string): Promise<number> {
   }
 }
 
+  /**
+   * Retrieves the financial details for a specific customer.
+   * @param customerNumber - The customer's unique number.
+   * @returns Customer financial details.
+   */
+  async getCustomerFinancialDetails(customerNumber: string): Promise<CustomerFinancialDetail> {
+    try {
+      // Fetch the customer using the customer number
+      const customer = await this.dynamicsCustomerService.getCustomerByNumber(customerNumber);
+      if (!customer) {
+        throw new NotFoundException(`Customer with number ${customerNumber} not found.`);
+      }
+  
+      // Fetch financial details using the customer ID
+      const financialDetails = await this.dynamicsCustomerService.getCustomerFinancialDetails(customer.id);
+      this.logger.debug(`Retrieved financial details for customer ${customerNumber}: ${JSON.stringify(financialDetails)}`);
+      return financialDetails;
+    } catch (error) {
+      this.logger.error(`Error fetching financial details for customer ${customerNumber}: ${error.message}`);
+      throw new HttpException('Failed to fetch customer financial details', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
 }
 

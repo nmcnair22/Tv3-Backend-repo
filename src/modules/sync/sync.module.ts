@@ -28,11 +28,13 @@ import { SyncStatus } from './entities/sync-status.entity';
 import { Vendor } from './entities/vendor.entity';
 
 // Import services
+import { CreditScoreHistory } from './entities/credit-score-history.entity';
 import { SyncService } from './sync.service';
 import { TmcApiService } from './tmc-api/tmc-api.service';
 import { V2ApiService } from './v2-api/v2-api.service';
 
-// Import DynamicsModule if needed
+// Import modules if needed
+import { CreditModule } from '../credit/credit.module';
 import { DynamicsModule } from '../dynamics/dynamics.module';
 
 // Import SyncController if implemented
@@ -63,9 +65,11 @@ import { SyncController } from '../sync/sync.controller';
       PurchaseCreditMemoLine,
       GeneralLedgerEntry,
       CustomerLedgerEntry,
+      CreditScoreHistory,
     ]),
     HttpModule,
-    DynamicsModule, 
+    DynamicsModule,
+    CreditModule,
   ],
   providers: [SyncService, V2ApiService, TmcApiService],
   controllers: [SyncController],

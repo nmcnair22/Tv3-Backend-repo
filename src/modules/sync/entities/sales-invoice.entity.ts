@@ -11,13 +11,9 @@ import {
   PrimaryColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { PaymentHistory } from '../../sync/entities/payment-history.entity';
 import { Customer } from './customer.entity';
 import { SalesInvoiceLine } from './sales-invoice-line.entity';
-// Import related entities if they are defined
-// import { Currency } from './currency.entity';
-// import { PaymentTerm } from './payment-term.entity';
-// import { ShipmentMethod } from './shipment-method.entity';
-// import { SalesOrder } from './sales-order.entity';
 
 @Entity('sales_invoice')
 @Index(['number', 'apiSource'], { unique: true })
@@ -58,7 +54,7 @@ export class SalesInvoice {
   @Column({ name: 'customer_id', type: 'char', length: 36, nullable: true })
   customerId?: string;
 
-  @ManyToOne(() => Customer, { nullable: true })
+  @ManyToOne(() => Customer, (customer: Customer) => customer.salesInvoices, { nullable: true })
   @JoinColumn({ name: 'customer_id' })
   customer?: Customer;
 
@@ -75,8 +71,8 @@ export class SalesInvoice {
   @Column({ name: 'bill_to_customer_id', type: 'char', length: 36, nullable: true })
   billToCustomerId?: string;
 
-  @Column({ name: 'bill_to_customer_number', type: 'varchar', length: 20 })
-  billToCustomerNumber: string;
+  @Column({ name: 'bill_to_customer_number', type: 'varchar', length: 20, nullable: true })
+  billToCustomerNumber?: string;
 
   /** Ship-To Information */
   @Column({ name: 'ship_to_name', type: 'varchar', length: 100, nullable: true })
@@ -260,8 +256,12 @@ export class SalesInvoice {
   apiSource?: string;
 
   /** One-to-Many relationship with SalesInvoiceLine */
-  @OneToMany(() => SalesInvoiceLine, (line) => line.salesInvoice)
+  @OneToMany(() => SalesInvoiceLine, (line: SalesInvoiceLine) => line.salesInvoice)
   salesInvoiceLines: SalesInvoiceLine[];
+
+  /** One-to-Many relationship with PaymentHistory */
+  @OneToMany(() => PaymentHistory, (payment: PaymentHistory) => payment.invoice)
+  paymentHistories: PaymentHistory[];
 
   /** Timestamps */
   @CreateDateColumn({ name: 'created_at' })
@@ -269,5 +269,4 @@ export class SalesInvoice {
 
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
-
 }

@@ -1,5 +1,6 @@
 // src/app.module.ts
 
+import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule'; // Import ScheduleModule
@@ -17,7 +18,10 @@ import { UserModule } from './user/user.module';
 
 // Newly added modules
 import { AgingModule } from './modules/aging/aging.module';
+import { CreditModule } from './modules/credit/credit.module';
 import { DsoModule } from './modules/dso/dso.module';
+import { DynamicsAccountService } from './modules/dynamics/dynamics-account.service';
+import { DynamicsCustomerService } from './modules/dynamics/dynamics-customer.service';
 import { FinancialDashboardLocalModule } from './modules/financial-dashboard-local/financial-dashboard-local.module';
 import { PaymentHistoryModule } from './modules/payments/payment-history.module';
 import { SyncModule } from './modules/sync/sync.module';
@@ -30,6 +34,7 @@ import { SyncModule } from './modules/sync/sync.module';
     TypeOrmModule.forRoot(AppDataSource.options),
     ScheduleModule.forRoot(), // Add ScheduleModule here
     // Core Modules
+    HttpModule,
     UserModule,
     DynamicsModule,
     CommonModule,
@@ -42,8 +47,15 @@ import { SyncModule } from './modules/sync/sync.module';
     AgingModule,
     PaymentHistoryModule,
     SyncModule,
+    CreditModule,
     FinancialDashboardLocalModule,
     DsoModule,
+  ],
+  providers: [DynamicsCustomerService, DynamicsAccountService],
+  exports: [
+    DynamicsAccountService,
+    DynamicsCustomerService, // Export if needed elsewhere
+    // ... other exports
   ],
 })
 export class AppModule {}

@@ -6,6 +6,7 @@ import { firstValueFrom } from 'rxjs';
 import { AgedReceivableItem } from '../../common/types/aged-receivables.types';
 import { BalanceSheetResponse } from '../../common/types/balance-sheet.types';
 import { CashFlowResponse } from '../../common/types/cash-flow.types';
+import { CustomerFinancialDetail, CustomerFinancialDetailResponse } from '../../common/types/customer-financial-detail.types';
 import { IncomeStatementsResponse } from '../../common/types/income-statements.types';
 import { DynamicsBaseService } from './dynamics-base.service';
 
@@ -202,4 +203,39 @@ export class DynamicsReportsService extends DynamicsBaseService {
       );
     }
   }
+
+   /**
+   * Fetches financial details for a specific customer.
+   * @param customerId - The unique customer ID.
+   * @returns Customer financial details.
+   */
+   async getCustomerFinancialDetails(customerId: string): Promise<CustomerFinancialDetail> {
+    this.logger.debug(`Fetching financial details for customer ID: ${customerId}`);
+
+    const url = `${this.standardApiUrl}/customers(${customerId})?$expand=customerFinancialDetail`;
+
+    const config: AxiosRequestConfig = {
+      headers: await this.getHeaders(),
+    };
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get<CustomerFinancialDetailResponse>(url, config),
+      ) as { data: CustomerFinancialDetailResponse };
+
+      this.logger.debug(`Financial details fetched successfully for customer ID: ${customerId}`);
+      return response.data.customerFinancialDetail;
+    } catch (error) {
+      const err = error as any;
+      this.logger.error(`Failed to fetch financial details for customer ID ${customerId}: ${err.message}`);
+      if (err.response) {
+        this.logger.error(`Error response data: ${JSON.stringify(err.response.data)}`);
+      }
+      throw new HttpException(
+        'Failed to fetch customer financial details',
+        err.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
 }

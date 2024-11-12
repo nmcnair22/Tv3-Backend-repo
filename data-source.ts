@@ -15,7 +15,7 @@ export const AppDataSource = new DataSource({
   database: process.env.DB_DATABASE || 'business_central_db',
   entities: [__dirname + '/src/modules/**/*.entity.{ts,js}'],
   migrations: [__dirname + '/src/migrations/*{.ts,.js}'],
-  synchronize: true, // We disable synchronize in favor of migrations
+  synchronize: true,
   logging: false,
 
   // Add the timezone and extra options here

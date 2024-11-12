@@ -8,12 +8,14 @@ export interface PaymentCustomerLedger {
   description: string;
   documentNo: string;
   documentType: string;
-  dueDate: string;
-  postingDate: string;
+  dueDate: Date; // Changed from string to Date
+  postingDate: string; // Keep as string or change to Date based on your needs
   sourceCode: string;
-  transactionNo: string;
-  paymentType: 'CustomerLedger';
-  documentDate: string;
+  transactionNo: number;
+  paymentType?: string; // Added for backward compatibility
+  depositEntryNo?: string; // Added for backward compatibility
+  createdAt?: Date; // Added to align with CustomerLedgerEntry
+  updatedAt?: Date; // Added to align with CustomerLedgerEntry
 }
 
 // Invoice details

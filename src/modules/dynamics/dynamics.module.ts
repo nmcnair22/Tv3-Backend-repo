@@ -7,6 +7,7 @@ import { DynamicsAccountService } from './dynamics-account.service';
 import { DynamicsAuthService } from './dynamics-auth.service';
 import { DynamicsBaseService } from './dynamics-base.service';
 import { DynamicsCreditService } from './dynamics-credit.service';
+import { DynamicsCustomerService } from './dynamics-customer.service';
 import { DynamicsGlEntryService } from './dynamics-glentry.service';
 import { DynamicsInvoiceService } from './dynamics-invoice.service';
 import { DynamicsItemService } from './dynamics-item.service';
@@ -28,6 +29,7 @@ import { DynamicsReportsService } from './dynamics-reports.service';
     DynamicsItemService,
     DynamicsAccountService,
     DynamicsGlEntryService,
+    DynamicsCustomerService,
   ],
   exports: [
     DynamicsAuthService,
@@ -38,6 +40,7 @@ import { DynamicsReportsService } from './dynamics-reports.service';
     DynamicsCreditService,
     DynamicsAccountService,
     DynamicsGlEntryService,
+    DynamicsCustomerService,
   ],
 })
 export class DynamicsModule {}
