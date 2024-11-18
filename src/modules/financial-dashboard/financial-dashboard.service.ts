@@ -2,6 +2,7 @@
 
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { AgedReceivableItem } from 'src/common/types/aged-receivables.types';
+import { PaymentHistoryRecord } from 'src/common/types/payment.types';
 import { FinancialDataService } from '../../common/services/financial-data.service';
 import { DSOMetric, PaymentCustomerLedger, PerCustomerDSOMetric } from '../../common/types/payment.types';
 import { AgingService } from '../aging/aging.service';
@@ -10,7 +11,10 @@ import { DynamicsPaymentService } from '../dynamics/dynamics-payment.service';
 @Injectable()
 export class FinancialDashboardService {
   private readonly logger = new Logger(FinancialDashboardService.name);
-
+  processPaymentHistory(record: PaymentHistoryRecord): void {
+    console.log(record.entryNo);
+  } 
+  
   constructor(
     private readonly financialDataService: FinancialDataService,
     private readonly dynamicsPaymentService: DynamicsPaymentService,
@@ -32,7 +36,7 @@ export class FinancialDashboardService {
 
         return inflowsData;
     } catch (error) {
-    const err = error as any;
+    const err = error as Error;
         this.logger.error(`Error in getInflowsData: ${err.message}`);
         throw new HttpException('Failed to fetch inflows data', HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -63,7 +67,7 @@ async getDSOMetrics(startDate: string, endDate: string): Promise<DSOMetric[]> {
       const associatedInvoices = invoices.filter(invoice => invoice.documentType === 'Invoice');
 
       for (const invoice of associatedInvoices) {
-        const daysOutstanding = this.calculateDaysBetweenDates(invoice.documentDate, payment.postingDate);
+        const daysOutstanding = this.calculateDaysBetweenDates(new Date(invoice.documentDate), new Date(payment.postingDate));
 
         dsoMetrics.push({
           invoiceNumber: invoice.documentNo,
@@ -77,8 +81,9 @@ async getDSOMetrics(startDate: string, endDate: string): Promise<DSOMetric[]> {
 
     this.logger.debug(`Total DSO metrics calculated: ${dsoMetrics.length}`);
     return dsoMetrics;
-  } catch (err: any) {
-    this.logger.error(`Error fetching DSO metrics: ${err.message}`);
+  } catch (err: unknown) {
+    const error = err as Error;
+    this.logger.error(`Error fetching DSO metrics: ${error.message}`);
     throw new HttpException('Failed to fetch DSO metrics', HttpStatus.INTERNAL_SERVER_ERROR);
   }
 }
@@ -89,7 +94,7 @@ async getDSOMetrics(startDate: string, endDate: string): Promise<DSOMetric[]> {
     try {
       const payments = await this.dynamicsPaymentService.getCustomerPaymentsFromLedger(startDate, endDate);
 
-      const paymentsByCustomer = payments.reduce((acc, payment) => {
+      const paymentsByCustomer = payments.reduce((acc: { [key: string]: number }, payment) => {
         if (!acc[payment.customerName]) {
           acc[payment.customerName] = 0;
         }
@@ -102,7 +107,7 @@ async getDSOMetrics(startDate: string, endDate: string): Promise<DSOMetric[]> {
         amount: paymentsByCustomer[customer],
       }));
     } catch (error) {
-    const err = error as any;
+    const err = error as Error;
       this.logger.error('Error fetching payments by customer:', err.message);
       throw new Error('Failed to fetch payments by customer.');
     }
@@ -119,7 +124,7 @@ async getDSOMetrics(startDate: string, endDate: string): Promise<DSOMetric[]> {
         paymentsByCustomer,
       };
     } catch (error) {
-    const err = error as any;
+    const err = error as Error;
       this.logger.error('Error fetching customer payments:', err.message);
       throw new HttpException('Failed to fetch customer payments', HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -138,17 +143,57 @@ async getDSOMetrics(startDate: string, endDate: string): Promise<DSOMetric[]> {
     return this.financialDataService.getInvoicesByNumbers(invoiceNumbers); // Delegate to FinancialDataService
   }
 
-  private calculateDaysBetweenDates(start: string, end: string): number {
-    const startDate = new Date(start);
-    const endDate = new Date(end);
-    return Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-  }
+  private calculateDaysBetweenDates(start: Date, end: Date): number {
+      return Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+    }
 
-  async getCustomerPaymentHistory(customerNumber: string, startDate: string, endDate: string): Promise<any[]> {
-    return this.financialDataService.getCustomerPaymentHistory(customerNumber, startDate, endDate);
-  }
+// Update the getCustomerPaymentHistory function's return type:
+async getCustomerPaymentHistory(
+  customerNumber: string,
+  startDate: string,
+  endDate: string
+): Promise<PaymentHistoryRecord[]> {
+  try {
+    if (!startDate || !endDate) {
+      throw new Error('startDate and endDate are required parameters.');
+    }
 
-  async getPerCustomerDSOMetrics(startDate: string, endDate: string): Promise<PerCustomerDSOMetric[]> {
+    const paymentHistory = await this.dynamicsPaymentService.getCustomerPaymentsWithInvoices(
+      customerNumber,
+      startDate,
+      endDate
+    );
+
+    return paymentHistory.map(record => ({
+      entryNo: record.paymentEntryNo,
+      customerName: '', // Add appropriate value
+      amount: record.paymentAmount,
+      creditAmount: 0, // Add appropriate value
+      debitAmount: 0, // Add appropriate value
+      description: record.description,
+      documentType: '', // Add appropriate value
+      documentNo: '', // Add appropriate value
+      postingDate: record.paymentDate.toISOString(), // Convert to ISO string
+      documentDate: new Date().toISOString(), // Convert to ISO string
+      dueDate: new Date().toISOString(), // Convert to ISO string
+      remainingAmount: 0, // Add appropriate value
+      currencyCode: '', // Add appropriate value
+      sourceCode: '', // Add appropriate value
+      transactionNo: '', // Add appropriate value
+      relatedInvoices: record.relatedInvoices.map(invoice => ({
+        invoiceNumber: invoice.invoiceNumber,
+        invoiceDate: invoice.invoiceDate.toISOString(),
+        amount: invoice.amount,
+      })),
+    }));
+  } catch (error) {
+    const err = error as Error;
+    this.logger.error(`Error fetching payment history for customer ${customerNumber}: ${err.message}`);
+    throw new HttpException('Failed to fetch payment history', HttpStatus.INTERNAL_SERVER_ERROR);
+  }
+}
+
+async getPerCustomerDSOMetrics(startDate: string, endDate: string): Promise<PerCustomerDSOMetric[]> {
     this.logger.debug(`Fetching per-customer DSO metrics from ${startDate} to ${endDate}`);
   
     if (!startDate || !endDate) {
@@ -199,52 +244,54 @@ async getDSOMetrics(startDate: string, endDate: string): Promise<DSOMetric[]> {
       this.logger.debug(`Total customers with DSO calculated: ${perCustomerDSOMetrics.length}`);
   
       return perCustomerDSOMetrics;
-    } catch (error: any) {
-      this.logger.error(`Error fetching per-customer DSO metrics: ${error.message}`);
+    } catch (error: unknown) {
+      const err = error as Error;
+      this.logger.error(`Error fetching per-customer DSO metrics: ${err.message}`);
       throw new HttpException('Failed to fetch per-customer DSO metrics', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
-  async getTopLateCustomers(asOfDate: string): Promise<any> {
+  async getTopLateCustomers(asOfDate: string): Promise<Record<string, { customerName: string; amount: number }[]>> {
     this.logger.debug(`Fetching top late customers as of ${asOfDate}`);
-
+  
     try {
       const agingReport = await this.getAgingReport(asOfDate);
-
+  
       // Exclude the total row and customers with zero amounts
       const filteredReport = agingReport.filter(
         (item) => item.name !== 'Total' && item.balanceDue > 0,
       );
-
+  
       // Define periods
       const periods = [
         { key: 'period1Amount', label: '30+ Days Overdue' },
         { key: 'period2Amount', label: '60+ Days Overdue' },
         { key: 'period3Amount', label: '90+ Days Overdue' },
       ];
-
-      const topLateCustomers = {};
-
+  
+      const topLateCustomers: Record<string, { customerName: string; amount: number }[]> = {};
+  
       for (const period of periods) {
         const customers = filteredReport
-          .filter((item) => item[period.key] > 0)
+          .filter((item) => Number(item[period.key as keyof AgedReceivableItem]) > 0)
           .map((item) => ({
             customerName: item.name,
-            amount: item[period.key],
+            amount: Number(item[period.key as keyof AgedReceivableItem]),
           }))
           .sort((a, b) => b.amount - a.amount)
           .slice(0, 5); // Get top 5 customers per period
-
+  
         topLateCustomers[period.label] = customers;
       }
-
+  
       return topLateCustomers;
     } catch (error) {
-    const err = error as any;
+      const err = error as Error;
       this.logger.error(`Error fetching top late customers: ${err.message}`);
       throw new HttpException('Failed to fetch top late customers', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
+
 }
 
 

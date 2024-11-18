@@ -1,0 +1,61 @@
+// src/modules/sync/dto/v2-sales-invoice-data.dto.ts
+
+export interface V2SalesInvoiceData {
+    id: string;
+    number: string;
+    externalDocumentNumber?: string | null;
+    invoiceDate?: string | null;
+    postingDate?: string | null;
+    dueDate?: string | null;
+    promisedPayDate?: string | null;
+    customerPurchaseOrderReference?: string | null;
+    customerId?: string | null;
+    customerNumber: string;
+    customerName?: string | null;
+    billToName?: string | null;
+    billToCustomerId?: string | null;
+    billToCustomerNumber?: string | null;
+    shipToName?: string | null;
+    shipToContact?: string | null;
+    sellToAddressLine1?: string | null;
+    sellToAddressLine2?: string | null;
+    sellToCity?: string | null;
+    sellToState?: string | null;
+    sellToPostCode?: string | null;
+    sellToCountry?: string | null;
+    billToAddressLine1?: string | null;
+    billToAddressLine2?: string | null;
+    billToCity?: string | null;
+    billToState?: string | null;
+    billToPostCode?: string | null;
+    billToCountry?: string | null;
+    shipToAddressLine1?: string | null;
+    shipToAddressLine2?: string | null;
+    shipToCity?: string | null;
+    shipToState?: string | null;
+    shipToPostCode?: string | null;
+    shipToCountry?: string | null;
+    currencyId?: string | null;
+    shortcutDimension1Code?: string | null;
+    shortcutDimension2Code?: string | null;
+    currencyCode?: string | null;
+    orderId?: string | null;
+    orderNumber?: string | null;
+    paymentTermsId?: string | null;
+    shipmentMethodId?: string | null;
+    salesperson?: string | null;
+    disputeStatusId?: string | null;
+    disputeStatus?: string | null;
+    pricesIncludeTax: boolean;
+    remainingAmount: number;
+    discountAmount: number;
+    discountAppliedBeforeTax: boolean;
+    totalAmountExcludingTax: number;
+    totalTaxAmount: number;
+    totalAmountIncludingTax: number;
+    status?: string | null;
+    phoneNumber?: string | null;
+    email?: string | null;
+    lastModifiedDateTime?: string | null;
+  }
+  

@@ -50,6 +50,10 @@ export class PurchaseCreditMemoLine {
   @Column({ name: 'description', type: 'varchar', length: 100, nullable: true })
   description?: string;
 
+  /** Description2 */
+  @Column({ name: 'description2', type: 'varchar', length: 100, nullable: true })
+  description2?: string;
+
   /** Unit of Measure ID */
   @Column({
     name: 'unit_of_measure_id',
@@ -204,6 +208,10 @@ export class PurchaseCreditMemoLine {
     nullable: true,
   })
   netAmountIncludingTax?: number;
+
+  /** Expected Receipt Date */
+  @Column({ name: 'expected_receipt_date', type: 'date', nullable: true })
+  expectedReceiptDate?: Date;
 
   /** Item Variant ID */
   @Column({

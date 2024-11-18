@@ -1,7 +1,8 @@
 // src/modules/financial-dashboard-local/financial-dashboard-local.controller.ts
 
 import { Controller, Get, Query } from '@nestjs/common';
-import { FinancialDashboardLocalService } from './financial-dashboard-local.service';
+import { CustomerPaymentHistoryResponse } from '../sync/dto/customer-payment-history-response.dto';
+import { CreditScoreHistory, FinancialDashboardLocalService } from './financial-dashboard-local.service';
 
 @Controller('api/local/financial-dashboard')
 export class FinancialDashboardLocalController {
@@ -30,7 +31,7 @@ export class FinancialDashboardLocalController {
     @Query('customerNumber') customerNumber: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
-  ): Promise<any> {
+  ): Promise<CustomerPaymentHistoryResponse> { // Updated return type
     return this.dashboardService.getCustomerPaymentHistory(
       customerNumber,
       startDate,
@@ -38,13 +39,15 @@ export class FinancialDashboardLocalController {
     );
   }
 
+
   @Get('customer-credit-score')
   async getCustomerCreditScore(
     @Query('customerNumber') customerNumber: string,
     @Query('asOfDate') asOfDate?: string,
-  ): Promise<any> {
+  ): Promise<number> {
     const date = asOfDate ? new Date(asOfDate) : undefined;
-    return this.dashboardService.calculateCreditScore(customerNumber, date);
+    const result = await this.dashboardService.calculateCreditScore(customerNumber, date);
+    return result.creditScore;
   }
   
   @Get('customer-credit-score-history')
@@ -53,13 +56,18 @@ export class FinancialDashboardLocalController {
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
     @Query('interval') interval: 'monthly' | 'weekly' | 'daily' = 'monthly',
-  ): Promise<any> {
-    return this.dashboardService.getCreditScoreHistory(
+  ): Promise<CreditScoreHistory[]> {
+    const history = await this.dashboardService.getCreditScoreHistory(
       customerNumber,
       startDate,
       endDate,
       interval,
     );
+    return history.map(item => ({
+      customerId: customerNumber,
+      date: item.date,
+      score: item.creditScore,
+    }));
   }
   // Define other endpoints as needed
 }

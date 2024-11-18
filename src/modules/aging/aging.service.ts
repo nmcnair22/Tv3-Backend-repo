@@ -49,7 +49,7 @@ export class AgingService {
 
       return agingResponse;
     } catch (error) {
-    const err = error as any;
+    const err = error as Error;
       this.logger.error('Error fetching aging report:', err.message);
       throw new Error('Failed to fetch aging report.');
     }

@@ -1,7 +1,7 @@
 import { HttpService } from '@nestjs/axios';
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AxiosRequestConfig, AxiosResponse } from 'axios';
+import { AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import { DynamicsAuthService } from './dynamics-auth.service';
 
@@ -77,7 +77,7 @@ export class DynamicsBaseService {
       const response: AxiosResponse<T> = await firstValueFrom(this.httpService.get<T>(`${apiUrl}${url}`, config));
       return response.data;
     } catch (error: unknown) {
-      this.handleHttpError('GET', `${apiUrl}${url}`, error);
+      this.handleHttpError('GET', `${apiUrl}${url}`, error as AxiosError);
     }
   }
 
@@ -88,7 +88,7 @@ export class DynamicsBaseService {
    * @param useCustomApi - Boolean flag to determine which API base URL to use.
    * @returns A promise that resolves to the response data of type T.
    */
-  protected async httpPost<T, D = any>(url: string, data: D, useCustomApi: boolean = false): Promise<T> {
+  protected async httpPost<T, D = Record<string, unknown>>(url: string, data: D, useCustomApi: boolean = false): Promise<T> {
     const apiUrl = useCustomApi ? this.integrationApiUrl : this.standardApiUrl; // Use the custom API if needed
     const config: AxiosRequestConfig = {
       headers: await this.getHeaders(),
@@ -97,8 +97,8 @@ export class DynamicsBaseService {
     try {
       const response: AxiosResponse<T> = await firstValueFrom(this.httpService.post<T>(`${apiUrl}${url}`, data, config));
       return response.data;
-    } catch (error: any) {
-      this.handleHttpError('POST', `${apiUrl}${url}`, error);
+    } catch (error: unknown) {
+      this.handleHttpError('POST', `${apiUrl}${url}`, error as AxiosError);
     }
   }
 
@@ -108,7 +108,7 @@ export class DynamicsBaseService {
    * @param url - The endpoint URL that was called.
    * @param error - The error object caught during the HTTP request.
    */
-  private handleHttpError(method: string, url: string, error: any): never {
+  private handleHttpError(method: string, url: string, error: AxiosError): never {
     if (error.response) {
       // Server responded with a status other than 2xx
       this.logger.error(

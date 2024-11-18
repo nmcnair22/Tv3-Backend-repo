@@ -71,7 +71,7 @@ export class FinancialDashboardLocalService {
         return 0;
       }
     } catch (error) {
-      const err = error as any;
+      const err = error as Error;
       this.logger.error(`Error fetching receivables for date ${date}: ${err.message}`);
       throw new Error('Failed to fetch receivables from Dynamics API');
     }
@@ -202,7 +202,7 @@ export class FinancialDashboardLocalService {
       const categoryName = accountNumberToCategory.get(accountNumber) || 'Uncategorized Income';
 
       const currentAmount = revenueCategories.get(categoryName) || 0;
-      const creditAmount = parseFloat(glEntry.creditAmount as any) || 0;
+      const creditAmount = glEntry.creditAmount || 0;
 
       revenueCategories.set(categoryName, currentAmount + creditAmount);
     });
@@ -217,7 +217,7 @@ export class FinancialDashboardLocalService {
    */
   calculateTotalNewInvoices(postedInvoices: SalesInvoice[]): number {
     return postedInvoices.reduce((sum, invoice) => {
-      const amount = parseFloat(invoice.totalAmountIncludingTax as any) || 0;
+      const amount = invoice.totalAmountIncludingTax || 0;
       return sum + amount;
     }, 0);
   }
@@ -246,7 +246,7 @@ export class FinancialDashboardLocalService {
    */
   getTotalPaymentsReceived(payments: CustomerLedgerEntry[]): number {
     return payments.reduce((sum, payment) => {
-      const creditAmount = parseFloat(payment.creditAmount as any) || 0;
+      const creditAmount = payment.creditAmount || 0;
       return sum + creditAmount;
     }, 0);
   }
@@ -256,12 +256,12 @@ export class FinancialDashboardLocalService {
    * @param payments - An array of CustomerLedgerEntry entities.
    * @returns A map of customer names to their total payment amounts and payment details.
    */
-  groupPaymentsByCustomer(payments: CustomerLedgerEntry[]): Map<string, { amount: number; payments: any[] }> {
-    const paymentsByCustomerMap = new Map<string, { amount: number; payments: any[] }>();
+  groupPaymentsByCustomer(payments: CustomerLedgerEntry[]): Map<string, { amount: number; payments: { amount: number; postingDate: string | null; documentNo: string; description: string }[] }> {
+    const paymentsByCustomerMap = new Map<string, { amount: number; payments: { amount: number; postingDate: string | null; documentNo: string; description: string }[] }>();
 
     payments.forEach((payment) => {
       const customerName = payment.customerName || 'Unknown';
-      const amount = parseFloat(payment.creditAmount as any) || 0;
+      const amount = payment.creditAmount || 0;
 
       if (!paymentsByCustomerMap.has(customerName)) {
         paymentsByCustomerMap.set(customerName, { amount: 0, payments: [] });
@@ -469,7 +469,7 @@ export class FinancialDashboardLocalService {
     });
   
     // Map paymentEntryNo to paymentEntry
-    const paymentEntryMap = new Map<number, any>();
+    const paymentEntryMap = new Map<number, CustomerLedgerEntry>();
     for (const paymentEntry of paymentEntries) {
       paymentEntryMap.set(paymentEntry.entryNo, paymentEntry);
     }
@@ -627,7 +627,7 @@ export class FinancialDashboardLocalService {
     customerNumber: string,
     startDate?: string,
     endDate?: string,
-  ): Promise<any> {
+  ): Promise<{ payments: { paymentDate: Date; paymentAmount: number; description: string; paymentEntryNo: number; relatedInvoices: { invoiceNumber: string; invoiceDate: Date; amount: number; dueDate: Date | null }[] }[]; unpaidInvoices: { invoiceNumber: string; invoiceDate: Date; dueDate: Date; totalAmount: number; amountPaid: number; amountRemaining: number; status: string }[]; partiallyPaidInvoices: { invoiceNumber: string; invoiceDate: Date; dueDate: Date; totalAmount: number; amountPaid: number; amountRemaining: number; status: string }[] }> {
     const loggerContext = 'getCustomerPaymentHistory';
 
     if (!customerNumber) {
@@ -693,7 +693,7 @@ export class FinancialDashboardLocalService {
   private async mapPaymentsToInvoices(
     paymentEntries: CustomerLedgerEntry[],
     asOfDate: Date,
-  ): Promise<any[]> {
+  ): Promise<{ paymentDate: Date; paymentAmount: number; description: string; paymentEntryNo: number; relatedInvoices: { invoiceNumber: string; invoiceDate: Date; amount: number; dueDate: Date | null }[] }[]> {
     const loggerContext = 'mapPaymentsToInvoices';
     this.logger.debug(`Mapping payments to invoices`, loggerContext);
 
@@ -733,7 +733,7 @@ export class FinancialDashboardLocalService {
       invoiceDueDateMap.set(invoice.number, invoice.dueDate);
     }
 
-    const paymentsWithInvoicesMap = new Map<number, any>();
+    const paymentsWithInvoicesMap = new Map<number, { paymentDate: Date; paymentAmount: number; description: string; paymentEntryNo: number; relatedInvoices: { invoiceNumber: string; invoiceDate: Date; amount: number; dueDate: Date | null }[] }>();
 
     for (const invoiceEntry of invoicesApplied) {
       const paymentEntry = paymentEntryMap.get(invoiceEntry.closedByEntryNo);
@@ -771,7 +771,7 @@ export class FinancialDashboardLocalService {
     openInvoices: SalesInvoice[],
     customerNumber: string,
     asOfDate: Date,
-  ): Promise<{ unpaidInvoices: any[]; partiallyPaidInvoices: any[] }> {
+  ): Promise<{ unpaidInvoices: { invoiceNumber: string; invoiceDate: Date; dueDate: Date; totalAmount: number; amountPaid: number; amountRemaining: number; status: string }[]; partiallyPaidInvoices: { invoiceNumber: string; invoiceDate: Date; dueDate: Date; totalAmount: number; amountPaid: number; amountRemaining: number; status: string }[] }> {
     const loggerContext = 'determineInvoicePaymentStatus';
     this.logger.debug(`Determining payment status of open invoices`, loggerContext);
 
@@ -855,7 +855,7 @@ export class FinancialDashboardLocalService {
    * @param asOfDate - Optional date up to which to consider data.
    * @returns The credit score and contributing factors.
    */
-  async calculateCreditScore(customerNumber: string, asOfDate?: Date): Promise<any> {
+  async calculateCreditScore(customerNumber: string, asOfDate?: Date): Promise<{ creditScore: number; factors: { totalPurchaseAmount: number; PAF: number; totalTimelinessPoints: number; PTF: number; outstandingBalance: number; OBF: number } }> {
     const loggerContext = 'calculateCreditScore';
     this.logger.debug(`Calculating credit score for customer ${customerNumber}`, loggerContext);
 
@@ -884,9 +884,9 @@ export class FinancialDashboardLocalService {
     const k3 = 1; // Points per day late
 
     // **Calculate Total Purchase Amount**
-    payments.forEach((payment) => {
-      payment.relatedInvoices.forEach((invoice) => {
-        totalPurchaseAmount += parseFloat(invoice.amount);
+    payments.forEach((payment: { relatedInvoices: { amount: number }[] }) => {
+      payment.relatedInvoices.forEach((invoice: { amount: number }) => {
+        totalPurchaseAmount += parseFloat(invoice.amount.toString());
       });
     });
     this.logger.debug(`Total purchase amount: ${totalPurchaseAmount}`, loggerContext);
@@ -926,14 +926,14 @@ export class FinancialDashboardLocalService {
     this.logger.debug(`Max timeliness points: ${maxTimelinessPoints}`, loggerContext);
 
     // **Calculate Outstanding Balance**
-    outstandingBalance = unpaidInvoices.reduce((sum, invoice) => {
+    outstandingBalance = unpaidInvoices.reduce((sum: number, invoice: { invoiceDate: Date; totalAmount: number }) => {
       if (new Date(invoice.invoiceDate) <= effectiveDate) {
         return sum + invoice.totalAmount;
       }
       return sum;
     }, 0);
 
-    outstandingBalance += partiallyPaidInvoices.reduce((sum, invoice) => {
+    outstandingBalance += partiallyPaidInvoices.reduce((sum: number, invoice: { invoiceDate: Date; amountRemaining: number }) => {
       if (new Date(invoice.invoiceDate) <= effectiveDate) {
         return sum + invoice.amountRemaining;
       }
@@ -991,7 +991,7 @@ export class FinancialDashboardLocalService {
     startDate: string,
     endDate: string,
     interval: 'monthly' | 'weekly' | 'daily' = 'monthly',
-  ): Promise<any[]> {
+  ): Promise<{ date: string; creditScore: number }[]> {
     const loggerContext = 'getCreditScoreHistory';
     this.logger.debug(`Fetching credit score history for customer ${customerNumber}`, loggerContext);
 
@@ -1027,87 +1027,34 @@ export class FinancialDashboardLocalService {
     return creditScores;
   }
 
-  // Remove or comment out the following methods if they are no longer needed
+  }
+  
+  // Define the CustomerPaymentHistory interface outside the class
+  export interface CustomerPaymentHistory {
+    entryNo: number;
+    customerName: string;
+    amount: number;
+    creditAmount: number;
+    debitAmount: number;
+    documentDate: string;
+    documentType: string;
+    documentNo: string;
+    postingDate: string;
+    dueDate: string;
+    remainingAmount: number;
+    currencyCode: string;
+    description: string;
+    sourceCode: string;
+    transactionNo: string;
+    relatedInvoices: {
+      invoiceNumber: string;
+      invoiceDate: string;
+      amount: number;
+    }[];
+  }
 
-  /**
-   * Placeholder for getting receivables for a specific date.
-   * Replace with actual implementation.
-   */
-  // private async getReceivablesForDate(date: string): Promise<number> {
-  //   // Implement your logic to fetch receivables for the given date
-  //   // This might involve calling an external API or querying the database
-  //   return 0; // Placeholder
-  // }
-
-  /**
-   * Placeholder for getting posted invoices.
-   * Replace with actual implementation if needed.
-   */
-  // private async getPostedInvoices(startDate: string, endDate: string): Promise<SalesInvoice[]> {
-  //   // Implement your logic to fetch posted invoices
-  //   return []; // Placeholder
-  // }
-
-  /**
-   * Placeholder for getting income accounts.
-   * Replace with actual implementation if needed.
-   */
-  // private async getIncomeAccounts(): Promise<Account[]> {
-  //   // Implement your logic to fetch income accounts
-  //   return []; // Placeholder
-  // }
-
-  /**
-   * Placeholder for getting revenue categories.
-   * Replace with actual implementation if needed.
-   */
-  // private async getRevenueCategories(postedInvoices: SalesInvoice[], incomeAccounts: Account[]): Promise<Map<string, number>> {
-  //   // Implement your logic to categorize revenue
-  //   return new Map(); // Placeholder
-  // }
-
-  /**
-   * Placeholder for calculating total new invoices.
-   * Replace with actual implementation if needed.
-   */
-  // private calculateTotalNewInvoices(postedInvoices: SalesInvoice[]): number {
-  //   // Implement your logic to calculate total new invoices
-  //   return 0; // Placeholder
-  // }
-
-  /**
-   * Placeholder for getting payments.
-   * Replace with actual implementation if needed.
-   */
-  // private async getPayments(start: Date, end: Date): Promise<CustomerLedgerEntry[]> {
-  //   // Implement your logic to fetch payments from the ledger
-  //   return []; // Placeholder
-  // }
-
-  /**
-   * Placeholder for calculating total payments received.
-   * Replace with actual implementation if needed.
-   */
-  // private getTotalPaymentsReceived(paymentsFromLedger: CustomerLedgerEntry[]): number {
-  //   // Implement your logic to calculate total payments received
-  //   return 0; // Placeholder
-  // }
-
-  /**
-   * Placeholder for grouping payments by customer.
-   * Replace with actual implementation if needed.
-   */
-  // private groupPaymentsByCustomer(payments: CustomerLedgerEntry[]): Map<string, { amount: number; payments: any[] }> {
-  //   // Implement your logic to group payments by customer
-  //   return new Map(); // Placeholder
-  // }
-
-  /**
-   * Placeholder for getting total credits.
-   * Since we're now fetching credits via SQL, you might want to remove this method.
-   */
-  // private async getTotalCredits(start: Date, end: Date): Promise<number> {
-  //   // Implement your logic to calculate total credits
-  //   return 0; // Placeholder
-  // }
-}
+  export interface CreditScoreHistory {
+    customerId: string;
+    score: number;
+    date: string;
+  }

@@ -58,7 +58,7 @@ export class DynamicsReportsService extends DynamicsBaseService {
       this.logger.debug(`Income statements data fetched successfully`);
       return response.data;
     } catch (error) {
-    const err = error as any;
+    const err = error as Error & { response?: { data?: unknown; status?: number } };
       this.logger.error(`Failed to fetch income statements: ${err.message}`);
       if (err.response) {
         this.logger.error(
@@ -108,7 +108,7 @@ export class DynamicsReportsService extends DynamicsBaseService {
       this.logger.debug(`Cash flow statements data fetched successfully`);
       return response.data;
     } catch (error) {
-    const err = error as any;
+    const err = error as Error & { response?: { data?: unknown; status?: number } };
       this.logger.error(`Failed to fetch cash flow statements: ${err.message}`);
       if (err.response) {
         this.logger.error(
@@ -152,7 +152,7 @@ export class DynamicsReportsService extends DynamicsBaseService {
       this.logger.debug(`Balance sheet statements data fetched successfully`);
       return response.data;
     } catch (error) {
-    const err = error as any;
+    const err = error as Error & { response?: { data?: unknown; status?: number } };
       this.logger.error(`Failed to fetch balance sheet statements: ${err.message}`);
       if (err.response) {
         this.logger.error(
@@ -192,7 +192,7 @@ export class DynamicsReportsService extends DynamicsBaseService {
       this.logger.debug(`Aged receivables data fetched successfully`);
       return response.data.value;
     } catch (error) {
-    const err = error as any;
+    const err = error as Error & { response?: { data?: unknown; status?: number } };
       this.logger.error(`Failed to fetch aged receivables: ${err.message}`);
       if (err.response && err.response.data) {
         this.logger.error(`Error response data: ${JSON.stringify(err.response.data)}`);
@@ -226,7 +226,7 @@ export class DynamicsReportsService extends DynamicsBaseService {
       this.logger.debug(`Financial details fetched successfully for customer ID: ${customerId}`);
       return response.data.customerFinancialDetail;
     } catch (error) {
-      const err = error as any;
+      const err = error as Error & { response?: { data?: unknown; status?: number } };
       this.logger.error(`Failed to fetch financial details for customer ID ${customerId}: ${err.message}`);
       if (err.response) {
         this.logger.error(`Error response data: ${JSON.stringify(err.response.data)}`);

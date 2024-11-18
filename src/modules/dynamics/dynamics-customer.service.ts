@@ -16,7 +16,7 @@ export class DynamicsCustomerService extends DynamicsBaseService {
    * @param customerNumber - The unique customer number.
    * @returns Customer data.
    */
-  async getCustomerByNumber(customerNumber: string): Promise<any> {
+  async getCustomerByNumber(customerNumber: string): Promise<Record<string, unknown> | null> {
     this.logger.debug(`Fetching customer with number: ${customerNumber}`);
 
     const url = `${this.standardApiUrl}/customers?$filter=number eq '${customerNumber}'`;
@@ -27,8 +27,8 @@ export class DynamicsCustomerService extends DynamicsBaseService {
 
     try {
       const response = await firstValueFrom(
-        this.httpService.get<any>(url, config),
-      ) as { data: { value: any[] } };
+        this.httpService.get<{ value: Record<string, unknown>[] }>(url, config),
+      );
 
       if (response.data.value.length === 0) {
         this.logger.warn(`No customer found with number: ${customerNumber}`);
@@ -39,7 +39,7 @@ export class DynamicsCustomerService extends DynamicsBaseService {
       this.logger.debug(`Customer fetched: ${JSON.stringify(customer)}`);
       return customer;
     } catch (error) {
-      const err = error as any;
+      const err = error as { message: string; response?: { data: Record<string, unknown>; status: number } };
       this.logger.error(`Failed to fetch customer ${customerNumber}:`, err.message);
       if (err.response) {
         this.logger.error(`Error response data: ${JSON.stringify(err.response.data)}`);
@@ -73,7 +73,7 @@ export class DynamicsCustomerService extends DynamicsBaseService {
       this.logger.debug(`Financial details fetched successfully for customer ID: ${customerId}`);
       return response.data.customerFinancialDetail;
     } catch (error) {
-      const err = error as any;
+      const err = error as { message: string; response?: { data: Record<string, unknown>; status: number } };
       this.logger.error(`Failed to fetch financial details for customer ID ${customerId}: ${err.message}`);
       if (err.response) {
         this.logger.error(`Error response data: ${JSON.stringify(err.response.data)}`);

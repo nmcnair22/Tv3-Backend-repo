@@ -20,7 +20,7 @@ export class PaymentHistoryController {
     try {
       return await this.financialDashboardService.getPaymentsByCustomer(startDate, endDate);
     } catch (error) {
-    const err = error as any;
+    const err = error as Error;
       this.logger.error(`Error fetching customer payments: ${err.message}`); // Use logger for error handling
       throw new HttpException('Failed to fetch customer payments', HttpStatus.INTERNAL_SERVER_ERROR);
     }

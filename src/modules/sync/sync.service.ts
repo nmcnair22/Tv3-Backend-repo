@@ -3,7 +3,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DeepPartial, Repository } from 'typeorm';
 import { CreditScoreService } from '../credit/credit-score.service';
 
 
@@ -30,6 +30,29 @@ import { ShipToAddress } from './entities/ship-to-address.entity';
 import { SyncStatus } from './entities/sync-status.entity';
 import { Vendor } from './entities/vendor.entity';
 
+// Interface imoports
+import { BillingScheduleLineData } from './dto/billing-schedule-line-data.dto';
+import { JobData } from './dto/job-data.dto';
+import { ShipToAddressData } from './dto/ship-to-address-data.dto';
+import { TmcCustomerLedgerEntryData } from './dto/tmc-customer-ledger-entry-data.dto';
+import { V2AccountData } from './dto/v2-account.dto';
+import { V2BankAccountData } from './dto/v2-bank-account-data.dto';
+import { V2CustomerData } from './dto/v2-customer-data.dto';
+import { V2GeneralLedgerEntryData } from './dto/v2-general-ledger-entry-data.dto';
+import { V2ItemData } from './dto/v2-item-data.dto';
+import { V2PurchaseCreditMemoData } from './dto/v2-purchase-credit-memo-data.dto';
+import { V2PurchaseCreditMemoLineData } from './dto/v2-purchase-credit-memo-line-data.dto';
+import { V2PurchaseInvoiceData } from './dto/v2-purchase-invoice-data.dto';
+import { V2PurchaseInvoiceLineData } from './dto/v2-purchase-invoice-line-data.dto';
+import { V2PurchaseOrderData } from './dto/v2-purchase-order-data.dto';
+import { V2PurchaseOrderLineData } from './dto/v2-purchase-order-line-data.dto';
+import { V2SalesCreditMemoData } from './dto/v2-sales-credit-memo-data.dto';
+import { V2SalesCreditMemoLineData } from './dto/v2-sales-credit-memo-line-data.dto';
+import { V2SalesInvoiceData } from './dto/v2-sales-invoice-data.dto';
+import { V2SalesInvoiceLineData } from './dto/v2-sales-invoice-line-data.dto';
+import { V2VendorData } from './dto/v2-vendor-data.dto';
+
+
 // API Service imports
 import { TmcApiService } from './tmc-api/tmc-api.service';
 import { V2ApiService } from './v2-api/v2-api.service';
@@ -38,7 +61,7 @@ import { V2ApiService } from './v2-api/v2-api.service';
 export class SyncService {
   private readonly logger = new Logger(SyncService.name);
 
-  private entityRepositoryMap: { [key: string]: { repository: Repository<any>, createdAtField: string } };
+  private entityRepositoryMap: { [key: string]: { repository: Repository<unknown>, createdAtField: string } };
 
   constructor(
     // API Services
@@ -202,21 +225,6 @@ async syncCustomers(fullSync: boolean = false) {
       this.logger.debug(`Saved customer ${customerEntity.customerNumber} to database`);
     }
 
-    // Optional: Handle deletions during full sync (if required)
-    /*
-    if (fullSync) {
-      const localCustomers = await this.customerRepository.find({ select: ['id'] });
-      const localIds = localCustomers.map(c => c.id);
-
-      const idsToDelete = localIds.filter(id => !dynamicsIds.has(id));
-
-      if (idsToDelete.length > 0) {
-        await this.customerRepository.delete(idsToDelete);
-        this.logger.debug(`Deleted ${idsToDelete.length} customers not present in Dynamics`);
-      }
-    }
-    */
-
     await this.updateLastSyncTimestamp(entityName);
   } catch (error) {
     this.logger.error('Error during customer synchronization', error.stack);
@@ -224,9 +232,9 @@ async syncCustomers(fullSync: boolean = false) {
   }
 }
 
-private transformV2Customer(data: any): Customer {
-  return this.customerRepository.create({
-    id: data.id,
+private transformV2Customer(data: V2CustomerData): Customer {
+  const customerData: DeepPartial<Customer> = {
+    id: data.id.toString(),
     customerNumber: data.number,
     displayName: data.displayName,
     type: data.type || null,
@@ -242,19 +250,21 @@ private transformV2Customer(data: any): Customer {
     salespersonCode: data.salespersonCode || null,
     balanceDue: data.balanceDue || null,
     creditLimit: data.creditLimit || null,
-    taxLiable: data.taxLiable ?? null, // Using nullish coalescing operator to handle false values
-    taxAreaId: data.taxAreaId || null,
+    taxLiable: data.taxLiable ?? null,
+    taxAreaId: data.taxAreaId?.toString() || null,
     taxAreaDisplayName: data.taxAreaDisplayName || null,
     taxRegistrationNumber: data.taxRegistrationNumber || null,
-    currencyId: data.currencyId || null,
+    currencyId: data.currencyId?.toString() || null,
     currencyCode: data.currencyCode || null,
-    paymentTermsId: data.paymentTermsId || null,
-    shipmentMethodId: data.shipmentMethodId || null,
-    paymentMethodId: data.paymentMethodId || null,
-    blocked: data.blocked || null,
+    paymentTermsId: data.paymentTermsId?.toString() || null,
+    shipmentMethodId: data.shipmentMethodId?.toString() || null,
+    paymentMethodId: data.paymentMethodId?.toString() || null,
+    blocked: data.blocked?.toString() || null,
     lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
     apiSource: 'v2.0',
-  });
+  };
+
+  return this.customerRepository.create(customerData);
 }
 
 async syncVendors(fullSync: boolean = false) {
@@ -281,9 +291,9 @@ async syncVendors(fullSync: boolean = false) {
   }
 }
 
-private transformV2Vendor(data: any): Vendor {
-  return this.vendorRepository.create({
-    id: data.id,
+private transformV2Vendor(data: V2VendorData): Vendor {
+  const vendorData: DeepPartial<Vendor> = {
+    id: data.id, // Ensure type matches (string)
     number: data.number,
     displayName: data.displayName || null,
     addressLine1: data.addressLine1 || null,
@@ -300,12 +310,14 @@ private transformV2Vendor(data: any): Vendor {
     irs1099Code: data.irs1099Code || null,
     paymentTermsCode: data.paymentTermsCode || null,
     paymentMethodCode: data.paymentMethodCode || null,
-    taxLiable: data.taxLiable || null,
-    blocked: data.blocked || null,
-    balance: data.balance || 0,
+    taxLiable: data.taxLiable ?? null,
+    blocked: data.blocked?.toString() ?? null,
+    balance: data.balance ?? 0,
     lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
     apiSource: 'v2.0',
-  });
+  };
+
+  return this.vendorRepository.create(vendorData);
 }
 
 // ----------------------------------
@@ -336,49 +348,36 @@ private transformV2Vendor(data: any): Vendor {
     }
   }
 
-private transformV2Item(data: any): Item {
-  return this.itemRepository.create({
-    id: data.id,
-    number: data.number,
-    displayName: data.displayName,
-    displayName2: data.displayName2 || null,
-    type: data.type,
-    itemCategoryId:
-      data.itemCategoryId !== '00000000-0000-0000-0000-000000000000'
-        ? data.itemCategoryId
-        : null,
-    itemCategoryCode: data.itemCategoryCode || null,
-    blocked: data.blocked,
-    gtin: data.gtin || null,
-    inventory: data.inventory,
-    unitPrice: data.unitPrice,
-    priceIncludesTax: data.priceIncludesTax,
-    unitCost: data.unitCost,
-    taxGroupId:
-      data.taxGroupId !== '00000000-0000-0000-0000-000000000000'
-        ? data.taxGroupId
-        : null,
-    taxGroupCode: data.taxGroupCode || null,
-    baseUnitOfMeasureId:
-      data.baseUnitOfMeasureId !== '00000000-0000-0000-0000-000000000000'
-        ? data.baseUnitOfMeasureId
-        : null,
-    baseUnitOfMeasureCode: data.baseUnitOfMeasureCode || null,
-    generalProductPostingGroupId:
-      data.generalProductPostingGroupId !== '00000000-0000-0000-0000-000000000000'
-        ? data.generalProductPostingGroupId
-        : null,
-    generalProductPostingGroupCode: data.generalProductPostingGroupCode || null,
-    inventoryPostingGroupId:
-      data.inventoryPostingGroupId !== '00000000-0000-0000-0000-000000000000'
-        ? data.inventoryPostingGroupId
-        : null,
-    inventoryPostingGroupCode: data.inventoryPostingGroupCode || null,
-    lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
-    apiSource: 'v2.0',
-  });
-}
-
+  private transformV2Item(data: V2ItemData): Item {
+    const itemData: DeepPartial<Item> = {
+      id: data.id,
+      number: data.number,
+      displayName: data.displayName,
+      displayName2: data.displayName2 || null,
+      type: data.type,
+      itemCategoryId: data.itemCategoryId !== '00000000-0000-0000-0000-000000000000' ? data.itemCategoryId : null,
+      itemCategoryCode: data.itemCategoryCode || null,
+      blocked: data.blocked,
+      gtin: data.gtin || null,
+      inventory: data.inventory,
+      unitPrice: data.unitPrice,
+      priceIncludesTax: data.priceIncludesTax,
+      unitCost: data.unitCost,
+      taxGroupId: data.taxGroupId !== '00000000-0000-0000-0000-000000000000' ? data.taxGroupId : null,
+      taxGroupCode: data.taxGroupCode || null,
+      baseUnitOfMeasureId: data.baseUnitOfMeasureId !== '00000000-0000-0000-0000-000000000000' ? data.baseUnitOfMeasureId : null,
+      baseUnitOfMeasureCode: data.baseUnitOfMeasureCode || null,
+      generalProductPostingGroupId: data.generalProductPostingGroupId !== '00000000-0000-0000-0000-000000000000' ? data.generalProductPostingGroupId : null,
+      generalProductPostingGroupCode: data.generalProductPostingGroupCode || null,
+      inventoryPostingGroupId: data.inventoryPostingGroupId !== '00000000-0000-0000-0000-000000000000' ? data.inventoryPostingGroupId : null,
+      inventoryPostingGroupCode: data.inventoryPostingGroupCode || null,
+      lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
+      apiSource: 'v2.0',
+    };
+  
+    return this.itemRepository.create(itemData);
+  }
+  
 // ----------------------------------
 // Sales Invoice Synchronization
 // ----------------------------------
@@ -436,36 +435,21 @@ private async syncSalesInvoiceLines(invoiceId: string, documentId: string): Prom
   }
 }
 
-private transformV2SalesInvoice(data: any): SalesInvoice {
-  return this.salesInvoiceRepository.create({
+private transformV2SalesInvoice(data: V2SalesInvoiceData): SalesInvoice {
+  const salesInvoiceData: DeepPartial<SalesInvoice> = {
     id: data.id,
     number: data.number,
     externalDocumentNumber: data.externalDocumentNumber || null,
-    invoiceDate: data.invoiceDate
-      ? this.parseDateString(data.invoiceDate)
-      : null,
-    postingDate: data.postingDate
-      ? this.parseDateString(data.postingDate)
-      : null,
-    dueDate: data.dueDate
-      ? this.parseDateString(data.dueDate)
-      : null,
-    promisedPayDate:
-      data.promisedPayDate && data.promisedPayDate !== '0001-01-01'
-        ? this.parseDateString(data.promisedPayDate)
-        : null,
+    invoiceDate: data.invoiceDate ? this.parseDateString(data.invoiceDate) : null,
+    postingDate: data.postingDate ? this.parseDateString(data.postingDate) : null,
+    dueDate: data.dueDate ? this.parseDateString(data.dueDate) : null,
+    promisedPayDate: data.promisedPayDate && data.promisedPayDate !== '0001-01-01' ? this.parseDateString(data.promisedPayDate) : null,
     customerPurchaseOrderReference: data.customerPurchaseOrderReference || null,
-    customerId:
-      data.customerId && data.customerId !== '00000000-0000-0000-0000-000000000000'
-        ? data.customerId
-        : null,
+    customerId: data.customerId && data.customerId !== '00000000-0000-0000-0000-000000000000' ? data.customerId : null,
     customerNumber: data.customerNumber,
     customerName: data.customerName || null,
     billToName: data.billToName || null,
-    billToCustomerId:
-      data.billToCustomerId && data.billToCustomerId !== '00000000-0000-0000-0000-000000000000'
-        ? data.billToCustomerId
-        : null,
+    billToCustomerId: data.billToCustomerId && data.billToCustomerId !== '00000000-0000-0000-0000-000000000000' ? data.billToCustomerId : null,
     billToCustomerNumber: data.billToCustomerNumber || null,
     shipToName: data.shipToName || null,
     shipToContact: data.shipToContact || null,
@@ -487,31 +471,16 @@ private transformV2SalesInvoice(data: any): SalesInvoice {
     shipToState: data.shipToState || null,
     shipToPostCode: data.shipToPostCode || null,
     shipToCountry: data.shipToCountry || null,
-    currencyId:
-      data.currencyId && data.currencyId !== '00000000-0000-0000-0000-000000000000'
-        ? data.currencyId
-        : null,
+    currencyId: data.currencyId && data.currencyId !== '00000000-0000-0000-0000-000000000000' ? data.currencyId : null,
     shortcutDimension1Code: data.shortcutDimension1Code || null,
     shortcutDimension2Code: data.shortcutDimension2Code || null,
     currencyCode: data.currencyCode || null,
-    orderId:
-      data.orderId && data.orderId !== '00000000-0000-0000-0000-000000000000'
-        ? data.orderId
-        : null,
+    orderId: data.orderId && data.orderId !== '00000000-0000-0000-0000-000000000000' ? data.orderId : null,
     orderNumber: data.orderNumber || null,
-    paymentTermsId:
-      data.paymentTermsId && data.paymentTermsId !== '00000000-0000-0000-0000-000000000000'
-        ? data.paymentTermsId
-        : null,
-    shipmentMethodId:
-      data.shipmentMethodId && data.shipmentMethodId !== '00000000-0000-0000-0000-000000000000'
-        ? data.shipmentMethodId
-        : null,
+    paymentTermsId: data.paymentTermsId && data.paymentTermsId !== '00000000-0000-0000-0000-000000000000' ? data.paymentTermsId : null,
+    shipmentMethodId: data.shipmentMethodId && data.shipmentMethodId !== '00000000-0000-0000-0000-000000000000' ? data.shipmentMethodId : null,
     salesperson: data.salesperson || null,
-    disputeStatusId:
-      data.disputeStatusId && data.disputeStatusId !== '00000000-0000-0000-0000-000000000000'
-        ? data.disputeStatusId
-        : null,
+    disputeStatusId: data.disputeStatusId && data.disputeStatusId !== '00000000-0000-0000-0000-000000000000' ? data.disputeStatusId : null,
     disputeStatus: data.disputeStatus || null,
     pricesIncludeTax: data.pricesIncludeTax,
     remainingAmount: data.remainingAmount,
@@ -525,18 +494,18 @@ private transformV2SalesInvoice(data: any): SalesInvoice {
     phoneNumber: data.phoneNumber || null,
     email: data.email || null,
     apiSource: 'v2.0',
-  });
+  };
+
+  return this.salesInvoiceRepository.create(salesInvoiceData);
 }
 
-private transformV2SalesInvoiceLine(data: any, documentId: string): SalesInvoiceLine {
+private transformV2SalesInvoiceLine(data: V2SalesInvoiceLineData, documentId: string): SalesInvoiceLine {
   // Handle and validate the discountPercent value
   let discountPercent = data.discountPercent;
 
   // Ensure discountPercent is a number
   if (typeof discountPercent !== 'number' || isNaN(discountPercent)) {
-    this.logger.warn(
-      `Invalid discount percent value for line ${data.id}. Setting discountPercent to 0.`,
-    );
+    this.logger.warn(`Invalid discount percent value for line ${data.id}. Setting discountPercent to 0.`);
     discountPercent = 0;
   }
 
@@ -550,37 +519,23 @@ private transformV2SalesInvoiceLine(data: any, documentId: string): SalesInvoice
 
   // Ensure discountPercent is within a valid range (0% to 100%)
   if (discountPercent > 100) {
-    this.logger.warn(
-      `Discount percent ${discountPercent}% exceeds 100% for line ${data.id}. Capping at 100%.`,
-    );
+    this.logger.warn(`Discount percent ${discountPercent}% exceeds 100% for line ${data.id}. Capping at 100%.`);
     discountPercent = 100;
   } else if (discountPercent < 0) {
-    this.logger.warn(
-      `Negative discount percent ${discountPercent}% for line ${data.id}. Setting to 0%.`,
-    );
+    this.logger.warn(`Negative discount percent ${discountPercent}% for line ${data.id}. Setting to 0%.`);
     discountPercent = 0;
   }
 
-  return this.salesInvoiceLineRepository.create({
+  const salesInvoiceLineData: DeepPartial<SalesInvoiceLine> = {
     id: data.id,
     documentId: documentId,
     sequence: data.sequence,
-    itemId:
-      data.itemId && data.itemId !== '00000000-0000-0000-0000-000000000000'
-        ? data.itemId
-        : null,
-    accountId:
-      data.accountId && data.accountId !== '00000000-0000-0000-0000-000000000000'
-        ? data.accountId
-        : null,
+    itemId: data.itemId && data.itemId !== '00000000-0000-0000-0000-000000000000' ? data.itemId : null,
+    accountId: data.accountId && data.accountId !== '00000000-0000-0000-0000-000000000000' ? data.accountId : null,
     lineType: data.lineType || null,
     lineObjectNumber: data.lineObjectNumber || null,
     description: data.description || null,
-    description2: data.description2 || null,
-    unitOfMeasureId:
-      data.unitOfMeasureId && data.unitOfMeasureId !== '00000000-0000-0000-0000-000000000000'
-        ? data.unitOfMeasureId
-        : null,
+    unitOfMeasureId: data.unitOfMeasureId && data.unitOfMeasureId !== '00000000-0000-0000-0000-000000000000' ? data.unitOfMeasureId : null,
     unitOfMeasureCode: data.unitOfMeasureCode || null,
     quantity: data.quantity,
     unitPrice: data.unitPrice,
@@ -596,18 +551,15 @@ private transformV2SalesInvoiceLine(data: any, documentId: string): SalesInvoice
     netAmount: data.netAmount,
     netTaxAmount: data.netTaxAmount,
     netAmountIncludingTax: data.netAmountIncludingTax,
-    shipmentDate: this.parseDateString(data.shipmentDate) || null,
-    itemVariantId:
-      data.itemVariantId && data.itemVariantId !== '00000000-0000-0000-0000-000000000000'
-        ? data.itemVariantId
-        : null,
-    locationId:
-      data.locationId && data.locationId !== '00000000-0000-0000-0000-000000000000'
-        ? data.locationId
-        : null,
+    shipmentDate: data.shipmentDate ? this.parseDateString(data.shipmentDate) : null,
+    itemVariantId: data.itemVariantId && data.itemVariantId !== '00000000-0000-0000-0000-000000000000' ? data.itemVariantId : null,
+    locationId: data.locationId && data.locationId !== '00000000-0000-0000-0000-000000000000' ? data.locationId : null,
     apiSource: 'v2.0',
-  });
+  };
+
+  return this.salesInvoiceLineRepository.create(salesInvoiceLineData);
 }
+
 
 // ----------------------------------
 // Sales Credit Memo Synchronization
@@ -659,14 +611,14 @@ private async syncSalesCreditMemoLines(creditMemoId: string, salesCreditMemoId: 
   }
 }
 
-private transformV2SalesCreditMemo(data: any): SalesCreditMemo {
-  return this.salesCreditMemoRepository.create({
+private transformV2SalesCreditMemo(data: V2SalesCreditMemoData): SalesCreditMemo {
+  const salesCreditMemoData: DeepPartial<SalesCreditMemo> = {
     id: data.id,
     number: data.number,
     externalDocumentNumber: data.externalDocumentNumber || null,
-    creditMemoDate: this.parseDateString(data.creditMemoDate),
-    postingDate: this.parseDateString(data.postingDate),
-    dueDate: this.parseDateString(data.dueDate),
+    creditMemoDate: data.creditMemoDate ? this.parseDateString(data.creditMemoDate) : null,
+    postingDate: data.postingDate ? this.parseDateString(data.postingDate) : null,
+    dueDate: data.dueDate ? this.parseDateString(data.dueDate) : null,
     customerId: this.transformNullableGuid(data.customerId),
     customerNumber: data.customerNumber,
     customerName: data.customerName || null,
@@ -699,28 +651,24 @@ private transformV2SalesCreditMemo(data: any): SalesCreditMemo {
     totalTaxAmount: data.totalTaxAmount,
     totalAmountIncludingTax: data.totalAmountIncludingTax,
     status: data.status || null,
-    lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
     invoiceId: this.transformNullableGuid(data.invoiceId),
     invoiceNumber: data.invoiceNumber || null,
     phoneNumber: data.phoneNumber || null,
     email: data.email || null,
     customerReturnReasonId: this.transformNullableGuid(data.customerReturnReasonId),
     apiSource: 'v2.0',
-  });
+  };
+
+  return this.salesCreditMemoRepository.create(salesCreditMemoData);
 }
 
-private transformV2SalesCreditMemoLine(
-  data: any,
-  salesCreditMemoId: string,
-): SalesCreditMemoLine {
+private transformV2SalesCreditMemoLine(data: V2SalesCreditMemoLineData, salesCreditMemoId: string): SalesCreditMemoLine {
   // Handle and validate the discountPercent value
   let discountPercent = data.discountPercent;
 
   // Ensure discountPercent is a number
   if (typeof discountPercent !== 'number' || isNaN(discountPercent)) {
-    this.logger.warn(
-      `Invalid discount percent value for line ${data.id}. Setting discountPercent to 0.`,
-    );
+    this.logger.warn(`Invalid discount percent value for line ${data.id}. Setting discountPercent to 0.`);
     discountPercent = 0;
   }
 
@@ -734,18 +682,14 @@ private transformV2SalesCreditMemoLine(
 
   // Ensure discountPercent is within a valid range (0% to 100%)
   if (discountPercent > 100) {
-    this.logger.warn(
-      `Discount percent ${discountPercent}% exceeds 100% for line ${data.id}. Capping at 100%.`,
-    );
+    this.logger.warn(`Discount percent ${discountPercent}% exceeds 100% for line ${data.id}. Capping at 100%.`);
     discountPercent = 100;
   } else if (discountPercent < 0) {
-    this.logger.warn(
-      `Negative discount percent ${discountPercent}% for line ${data.id}. Setting to 0%.`,
-    );
+    this.logger.warn(`Negative discount percent ${discountPercent}% for line ${data.id}. Setting to 0%.`);
     discountPercent = 0;
   }
 
-  return this.salesCreditMemoLineRepository.create({
+  const salesCreditMemoLineData: DeepPartial<SalesCreditMemoLine> = {
     id: data.id,
     documentId: salesCreditMemoId,
     sequence: data.sequence,
@@ -754,7 +698,6 @@ private transformV2SalesCreditMemoLine(
     lineType: data.lineType || null,
     lineObjectNumber: data.lineObjectNumber || null,
     description: data.description || null,
-    description2: data.description2 || null,
     unitOfMeasureId: this.transformNullableGuid(data.unitOfMeasureId),
     unitOfMeasureCode: data.unitOfMeasureCode || null,
     unitPrice: data.unitPrice,
@@ -771,12 +714,15 @@ private transformV2SalesCreditMemoLine(
     netAmount: data.netAmount,
     netTaxAmount: data.netTaxAmount,
     netAmountIncludingTax: data.netAmountIncludingTax,
-    shipmentDate: this.parseDateString(data.shipmentDate),
+    shipmentDate: data.shipmentDate ? this.parseDateString(data.shipmentDate) : null,
     itemVariantId: this.transformNullableGuid(data.itemVariantId),
     locationId: this.transformNullableGuid(data.locationId),
     apiSource: 'v2.0',
-  });
+  };
+
+  return this.salesCreditMemoLineRepository.create(salesCreditMemoLineData);
 }
+
 
 // ----------------------------------
 // Purchase Invoice Synchronization
@@ -843,7 +789,7 @@ private async syncPurchaseInvoiceLines(purchaseInvoiceId: string, purchaseInvoic
   }
 }
 
-private transformV2PurchaseInvoice(data: any): PurchaseInvoice {
+private transformV2PurchaseInvoice(data: V2PurchaseInvoiceData): PurchaseInvoice {
   if (!data.vendorNumber) {
     throw new Error(`Vendor number is missing for purchase invoice ${data.id}`);
   }
@@ -851,7 +797,7 @@ private transformV2PurchaseInvoice(data: any): PurchaseInvoice {
     throw new Error(`Pay-to vendor number is missing for purchase invoice ${data.id}`);
   }
 
-  return this.purchaseInvoiceRepository.create({
+  const purchaseInvoiceData: DeepPartial<PurchaseInvoice> = {
     id: data.id,
     number: data.number,
     postingDate: this.parseDate(data.postingDate),
@@ -862,9 +808,7 @@ private transformV2PurchaseInvoice(data: any): PurchaseInvoice {
     vendorNumber: data.vendorNumber,
     vendorName: data.vendorName || null,
     payToName: data.payToName || null,
-    payToContact: data.payToContact || null,
-    payToVendorId:
-      data.payToVendorId !== '00000000-0000-0000-0000-000000000000' ? data.payToVendorId : null,
+    payToVendorId: data.payToVendorId !== '00000000-0000-0000-0000-000000000000' ? data.payToVendorId : null,
     payToVendorNumber: data.payToVendorNumber,
     shipToName: data.shipToName || null,
     shipToContact: data.shipToContact || null,
@@ -890,8 +834,7 @@ private transformV2PurchaseInvoice(data: any): PurchaseInvoice {
     shortcutDimension2Code: data.shortcutDimension2Code || null,
     currencyId: data.currencyId !== '00000000-0000-0000-0000-000000000000' ? data.currencyId : null,
     currencyCode: data.currencyCode || null,
-    orderId:
-      data.orderId !== '00000000-0000-0000-0000-000000000000' ? data.orderId : null,
+    orderId: data.orderId !== '00000000-0000-0000-0000-000000000000' ? data.orderId : null,
     orderNumber: data.orderNumber || null,
     purchaser: data.purchaser || null,
     pricesIncludeTax: data.pricesIncludeTax ?? null,
@@ -903,30 +846,23 @@ private transformV2PurchaseInvoice(data: any): PurchaseInvoice {
     status: data.status || null,
     lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
     apiSource: 'v2.0',
-  });
+  };
+
+  return this.purchaseInvoiceRepository.create(purchaseInvoiceData);
 }
 
-private transformV2PurchaseInvoiceLine(data: any, purchaseInvoiceDbId: string): PurchaseInvoiceLine {
-  return this.purchaseInvoiceLineRepository.create({
+private transformV2PurchaseInvoiceLine(data: V2PurchaseInvoiceLineData, purchaseInvoiceDbId: string): PurchaseInvoiceLine {
+  const purchaseInvoiceLineData: DeepPartial<PurchaseInvoiceLine> = {
     id: data.id,
     documentId: purchaseInvoiceDbId,
     sequence: data.sequence || null,
-    itemId:
-      data.itemId && data.itemId !== '00000000-0000-0000-0000-000000000000'
-        ? data.itemId
-        : null,
-    accountId:
-      data.accountId && data.accountId !== '00000000-0000-0000-0000-000000000000'
-        ? data.accountId
-        : null,
+    itemId: this.transformNullableGuid(data.itemId),
+    accountId: this.transformNullableGuid(data.accountId),
     lineType: data.lineType || null,
     lineObjectNumber: data.lineObjectNumber || null,
     description: data.description || null,
     description2: data.description2 || null,
-    unitOfMeasureId:
-      data.unitOfMeasureId && data.unitOfMeasureId !== '00000000-0000-0000-0000-000000000000'
-        ? data.unitOfMeasureId
-        : null,
+    unitOfMeasureId: this.transformNullableGuid(data.unitOfMeasureId),
     unitOfMeasureCode: data.unitOfMeasureCode || null,
     unitCost: data.unitCost ?? null,
     quantity: data.quantity ?? null,
@@ -942,16 +878,15 @@ private transformV2PurchaseInvoiceLine(data: any, purchaseInvoiceDbId: string): 
     netAmount: data.netAmount ?? null,
     netTaxAmount: data.netTaxAmount ?? null,
     netAmountIncludingTax: data.netAmountIncludingTax ?? null,
-    expectedReceiptDate: this.parseDateString(data.expectedReceiptDate) || null,
-    itemVariantId:
-      data.itemVariantId !== '00000000-0000-0000-0000-000000000000'
-        ? data.itemVariantId
-        : null,
-    locationId:
-      data.locationId !== '00000000-0000-0000-0000-000000000000' ? data.locationId : null,
+    expectedReceiptDate: data.expectedReceiptDate ? this.parseDateString(data.expectedReceiptDate) : null,
+    itemVariantId: this.transformNullableGuid(data.itemVariantId),
+    locationId: this.transformNullableGuid(data.locationId),
     apiSource: 'v2.0',
-  });
+  };
+
+  return this.purchaseInvoiceLineRepository.create(purchaseInvoiceLineData);
 }
+
 
 private parseDate(dateString: string | null): Date | null {
   return dateString ? new Date(dateString) : null;
@@ -1008,21 +943,17 @@ private async syncPurchaseOrderLines(purchaseOrderId: string, purchaseOrderDbId:
   }
 }
 
-private transformV2PurchaseOrder(data: any): PurchaseOrder {
-  return this.purchaseOrderRepository.create({
+private transformV2PurchaseOrder(data: V2PurchaseOrderData): PurchaseOrder {
+  const purchaseOrderData: DeepPartial<PurchaseOrder> = {
     id: data.id,
     number: data.number,
-    orderDate: this.parseDateString(data.orderDate),
-    postingDate: this.parseDateString(data.postingDate),
-    vendorId: data.vendorId && data.vendorId !== '00000000-0000-0000-0000-000000000000'
-      ? data.vendorId
-      : null,
+    orderDate: data.orderDate ? this.parseDateString(data.orderDate) : null,
+    postingDate: data.postingDate ? this.parseDateString(data.postingDate) : null,
+    vendorId: data.vendorId && data.vendorId !== '00000000-0000-0000-0000-000000000000' ? data.vendorId : null,
     vendorNumber: data.vendorNumber,
     vendorName: data.vendorName || null,
     payToName: data.payToName || null,
-    payToVendorId: data.payToVendorId && data.payToVendorId !== '00000000-0000-0000-0000-000000000000'
-      ? data.payToVendorId
-      : null,
+    payToVendorId: data.payToVendorId && data.payToVendorId !== '00000000-0000-0000-0000-000000000000' ? data.payToVendorId : null,
     payToVendorNumber: data.payToVendorNumber || null,
     shipToName: data.shipToName || null,
     shipToContact: data.shipToContact || null,
@@ -1046,39 +977,32 @@ private transformV2PurchaseOrder(data: any): PurchaseOrder {
     shipToCountry: data.shipToCountry || null,
     shortcutDimension1Code: data.shortcutDimension1Code || null,
     shortcutDimension2Code: data.shortcutDimension2Code || null,
-    currencyId: data.currencyId && data.currencyId !== '00000000-0000-0000-0000-000000000000'
-      ? data.currencyId
-      : null,
+    currencyId: data.currencyId && data.currencyId !== '00000000-0000-0000-0000-000000000000' ? data.currencyId : null,
     currencyCode: data.currencyCode || null,
-    pricesIncludeTax: data.pricesIncludeTax || null,
-    paymentTermsId: data.paymentTermsId && data.paymentTermsId !== '00000000-0000-0000-0000-000000000000'
-      ? data.paymentTermsId
-      : null,
-    shipmentMethodId: data.shipmentMethodId && data.shipmentMethodId !== '00000000-0000-0000-0000-000000000000'
-      ? data.shipmentMethodId
-      : null,
+    pricesIncludeTax: data.pricesIncludeTax ?? null,
+    paymentTermsId: data.paymentTermsId && data.paymentTermsId !== '00000000-0000-0000-0000-000000000000' ? data.paymentTermsId : null,
+    shipmentMethodId: data.shipmentMethodId && data.shipmentMethodId !== '00000000-0000-0000-0000-000000000000' ? data.shipmentMethodId : null,
     purchaser: data.purchaser || null,
-    requestedReceiptDate: this.parseDateString(data.requestedReceiptDate),
-    discountAmount: data.discountAmount || null,
-    discountAppliedBeforeTax: data.discountAppliedBeforeTax || null,
-    totalAmountExcludingTax: data.totalAmountExcludingTax || null,
-    totalTaxAmount: data.totalTaxAmount || null,
-    totalAmountIncludingTax: data.totalAmountIncludingTax || null,
-    fullyReceived: data.fullyReceived || null,
+    requestedReceiptDate: data.requestedReceiptDate ? this.parseDateString(data.requestedReceiptDate) : null,
+    discountAmount: data.discountAmount ?? null,
+    discountAppliedBeforeTax: data.discountAppliedBeforeTax ?? null,
+    totalAmountExcludingTax: data.totalAmountExcludingTax ?? null,
+    totalTaxAmount: data.totalTaxAmount ?? null,
+    totalAmountIncludingTax: data.totalAmountIncludingTax ?? null,
+    fullyReceived: data.fullyReceived ?? null,
     status: data.status || null,
-    lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
+    lastModifiedDateTime: data.lastModifiedDateTime ? this.parseDateString(data.lastModifiedDateTime) : null,
     apiSource: 'v2.0',
-  });
+  };
+
+  return this.purchaseOrderRepository.create(purchaseOrderData);
 }
 
-private transformV2PurchaseOrderLine(
-  data: any,
-  purchaseOrderId: string,
-): PurchaseOrderLine {
-  return this.purchaseOrderLineRepository.create({
+private transformV2PurchaseOrderLine(data: V2PurchaseOrderLineData, purchaseOrderId: string): PurchaseOrderLine {
+  const purchaseOrderLineData: DeepPartial<PurchaseOrderLine> = {
     id: data.id,
     documentId: purchaseOrderId,
-    sequence: data.sequence || null,
+    sequence: data.sequence ?? null,
     itemId: data.itemId && data.itemId !== '00000000-0000-0000-0000-000000000000' ? data.itemId : null,
     accountId: data.accountId && data.accountId !== '00000000-0000-0000-0000-000000000000' ? data.accountId : null,
     lineType: data.lineType || null,
@@ -1087,29 +1011,31 @@ private transformV2PurchaseOrderLine(
     description2: data.description2 || null,
     unitOfMeasureId: data.unitOfMeasureId && data.unitOfMeasureId !== '00000000-0000-0000-0000-000000000000' ? data.unitOfMeasureId : null,
     unitOfMeasureCode: data.unitOfMeasureCode || null,
-    quantity: data.quantity || null,
-    directUnitCost: data.directUnitCost || null,
-    discountAmount: data.discountAmount || null,
-    discountPercent: data.discountPercent || null,
-    discountAppliedBeforeTax: data.discountAppliedBeforeTax || null,
-    amountExcludingTax: data.amountExcludingTax || null,
+    quantity: data.quantity ?? null,
+    directUnitCost: data.directUnitCost ?? null,
+    discountAmount: data.discountAmount ?? null,
+    discountPercent: data.discountPercent ?? null,
+    discountAppliedBeforeTax: data.discountAppliedBeforeTax ?? null,
+    amountExcludingTax: data.amountExcludingTax ?? null,
     taxCode: data.taxCode || null,
-    taxPercent: data.taxPercent || null,
-    totalTaxAmount: data.totalTaxAmount || null,
-    amountIncludingTax: data.amountIncludingTax || null,
-    invoiceDiscountAllocation: data.invoiceDiscountAllocation || null,
-    netAmount: data.netAmount || null,
-    netTaxAmount: data.netTaxAmount || null,
-    netAmountIncludingTax: data.netAmountIncludingTax || null,
-    expectedReceiptDate: this.parseDateString(data.expectedReceiptDate),
-    receivedQuantity: data.receivedQuantity || null,
-    invoicedQuantity: data.invoicedQuantity || null,
-    invoiceQuantity: data.invoiceQuantity || null,
-    receiveQuantity: data.receiveQuantity || null,
+    taxPercent: data.taxPercent ?? null,
+    totalTaxAmount: data.totalTaxAmount ?? null,
+    amountIncludingTax: data.amountIncludingTax ?? null,
+    invoiceDiscountAllocation: data.invoiceDiscountAllocation ?? null,
+    netAmount: data.netAmount ?? null,
+    netTaxAmount: data.netTaxAmount ?? null,
+    netAmountIncludingTax: data.netAmountIncludingTax ?? null,
+    expectedReceiptDate: data.expectedReceiptDate ? this.parseDateString(data.expectedReceiptDate) : null,
+    receivedQuantity: data.receivedQuantity ?? null,
+    invoicedQuantity: data.invoicedQuantity ?? null,
+    invoiceQuantity: data.invoiceQuantity ?? null,
+    receiveQuantity: data.receiveQuantity ?? null,
     itemVariantId: data.itemVariantId && data.itemVariantId !== '00000000-0000-0000-0000-000000000000' ? data.itemVariantId : null,
     locationId: data.locationId && data.locationId !== '00000000-0000-0000-0000-000000000000' ? data.locationId : null,
     apiSource: 'v2.0',
-  });
+  };
+
+  return this.purchaseOrderLineRepository.create(purchaseOrderLineData);
 }
 
 // ----------------------------------
@@ -1169,24 +1095,18 @@ private async syncPurchaseCreditMemoLines(creditMemoId: string, purchaseCreditMe
   }
 }
 
-private transformV2PurchaseCreditMemo(data: any): PurchaseCreditMemo {
-  return this.purchaseCreditMemoRepository.create({
+private transformV2PurchaseCreditMemo(data: V2PurchaseCreditMemoData): PurchaseCreditMemo {
+  const purchaseCreditMemoData: DeepPartial<PurchaseCreditMemo> = {
     id: data.id,
     number: data.number,
     creditMemoDate: data.creditMemoDate ? this.parseDateString(data.creditMemoDate) : null,
     postingDate: data.postingDate ? this.parseDateString(data.postingDate) : null,
     dueDate: data.dueDate ? this.parseDateString(data.dueDate) : null,
-    vendorId:
-      data.vendorId && data.vendorId !== '00000000-0000-0000-0000-000000000000'
-        ? data.vendorId
-        : null,
+    vendorId: data.vendorId && data.vendorId !== '00000000-0000-0000-0000-000000000000' ? data.vendorId : null,
     vendorNumber: data.vendorNumber,
     vendorName: data.vendorName || null,
-    payToVendorId:
-      data.payToVendorId && data.payToVendorId !== '00000000-0000-0000-0000-000000000000'
-        ? data.payToVendorId
-        : null,
-    payToVendorNumber: data.payToVendorNumber,
+    payToVendorId: data.payToVendorId && data.payToVendorId !== '00000000-0000-0000-0000-000000000000' ? data.payToVendorId : null,
+    payToVendorNumber: data.payToVendorNumber || null,
     payToName: data.payToName || null,
     buyFromAddressLine1: data.buyFromAddressLine1 || null,
     buyFromAddressLine2: data.buyFromAddressLine2 || null,
@@ -1197,114 +1117,68 @@ private transformV2PurchaseCreditMemo(data: any): PurchaseCreditMemo {
     payToAddressLine1: data.payToAddressLine1 || null,
     payToAddressLine2: data.payToAddressLine2 || null,
     payToCity: data.payToCity || null,
-    payToCountry: data.payToCountry || null,
     payToState: data.payToState || null,
     payToPostCode: data.payToPostCode || null,
+    payToCountry: data.payToCountry || null,
     shortcutDimension1Code: data.shortcutDimension1Code || null,
     shortcutDimension2Code: data.shortcutDimension2Code || null,
-    currencyId:
-      data.currencyId && data.currencyId !== '00000000-0000-0000-0000-000000000000'
-        ? data.currencyId
-        : null,
+    currencyId: data.currencyId && data.currencyId !== '00000000-0000-0000-0000-000000000000' ? data.currencyId : null,
     currencyCode: data.currencyCode || null,
-    paymentTermsId:
-      data.paymentTermsId && data.paymentTermsId !== '00000000-0000-0000-0000-000000000000'
-        ? data.paymentTermsId
-        : null,
-    shipmentMethodId:
-      data.shipmentMethodId && data.shipmentMethodId !== '00000000-0000-0000-0000-000000000000'
-        ? data.shipmentMethodId
-        : null,
+    paymentTermsId: data.paymentTermsId && data.paymentTermsId !== '00000000-0000-0000-0000-000000000000' ? data.paymentTermsId : null,
+    shipmentMethodId: data.shipmentMethodId && data.shipmentMethodId !== '00000000-0000-0000-0000-000000000000' ? data.shipmentMethodId : null,
     purchaser: data.purchaser || null,
-    pricesIncludeTax:
-      data.pricesIncludeTax !== undefined ? data.pricesIncludeTax : null,
-    discountAmount:
-      data.discountAmount !== undefined ? data.discountAmount : null,
-    discountAppliedBeforeTax:
-      data.discountAppliedBeforeTax !== undefined ? data.discountAppliedBeforeTax : null,
-    totalAmountExcludingTax:
-      data.totalAmountExcludingTax !== undefined ? data.totalAmountExcludingTax : null,
-    totalTaxAmount:
-      data.totalTaxAmount !== undefined ? data.totalTaxAmount : null,
-    totalAmountIncludingTax:
-      data.totalAmountIncludingTax !== undefined ? data.totalAmountIncludingTax : null,
+    pricesIncludeTax: data.pricesIncludeTax ?? null,
+    discountAmount: data.discountAmount ?? null,
+    discountAppliedBeforeTax: data.discountAppliedBeforeTax ?? null,
+    totalAmountExcludingTax: data.totalAmountExcludingTax ?? null,
+    totalTaxAmount: data.totalTaxAmount ?? null,
+    totalAmountIncludingTax: data.totalAmountIncludingTax ?? null,
     status: data.status || null,
-    lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
-    invoiceId:
-      data.invoiceId && data.invoiceId !== '00000000-0000-0000-0000-000000000000'
-        ? data.invoiceId
-        : null,
+    lastModifiedDateTime: data.lastModifiedDateTime ? this.parseDateString(data.lastModifiedDateTime) : null,
+    invoiceId: data.invoiceId && data.invoiceId !== '00000000-0000-0000-0000-000000000000' ? data.invoiceId : null,
     invoiceNumber: data.invoiceNumber || null,
-    vendorReturnReasonId:
-      data.vendorReturnReasonId &&
-      data.vendorReturnReasonId !== '00000000-0000-0000-0000-000000000000'
-        ? data.vendorReturnReasonId
-        : null,
+    vendorReturnReasonId: data.vendorReturnReasonId && data.vendorReturnReasonId !== '00000000-0000-0000-0000-000000000000' ? data.vendorReturnReasonId : null,
     apiSource: 'v2.0',
-  });
+  };
+
+  return this.purchaseCreditMemoRepository.create(purchaseCreditMemoData);
 }
 
-private transformV2PurchaseCreditMemoLine(
-  data: any,
-  purchaseCreditMemoId: string,
-): PurchaseCreditMemoLine {
-  return this.purchaseCreditMemoLineRepository.create({
+
+private transformV2PurchaseCreditMemoLine(data: V2PurchaseCreditMemoLineData, purchaseCreditMemoId: string): PurchaseCreditMemoLine {
+  const purchaseCreditMemoLineData: DeepPartial<PurchaseCreditMemoLine> = {
     id: data.id,
-    documentId: purchaseCreditMemoId, // Updated to match entity field name
-    sequence: data.sequence !== undefined ? data.sequence : null,
-    itemId:
-      data.itemId && data.itemId !== '00000000-0000-0000-0000-000000000000'
-        ? data.itemId
-        : null,
-    accountId:
-      data.accountId && data.accountId !== '00000000-0000-0000-0000-000000000000'
-        ? data.accountId
-        : null,
+    documentId: purchaseCreditMemoId,
+    sequence: data.sequence ?? null,
+    itemId: data.itemId && data.itemId !== '00000000-0000-0000-0000-000000000000' ? data.itemId : null,
+    accountId: data.accountId && data.accountId !== '00000000-0000-0000-0000-000000000000' ? data.accountId : null,
     lineType: data.lineType || null,
     lineObjectNumber: data.lineObjectNumber || null,
     description: data.description || null,
-    unitOfMeasureId:
-      data.unitOfMeasureId && data.unitOfMeasureId !== '00000000-0000-0000-0000-000000000000'
-        ? data.unitOfMeasureId
-        : null,
+    description2: data.description2 || null,
+    unitOfMeasureId: data.unitOfMeasureId && data.unitOfMeasureId !== '00000000-0000-0000-0000-000000000000' ? data.unitOfMeasureId : null,
     unitOfMeasureCode: data.unitOfMeasureCode || null,
-    unitCost:
-      data.unitCost !== undefined ? data.unitCost : null,
-    quantity:
-      data.quantity !== undefined ? data.quantity : null,
-    discountAmount:
-      data.discountAmount !== undefined ? data.discountAmount : null,
-    discountPercent:
-      data.discountPercent !== undefined ? data.discountPercent : null,
-    discountAppliedBeforeTax:
-      data.discountAppliedBeforeTax !== undefined ? data.discountAppliedBeforeTax : null,
-    amountExcludingTax:
-      data.amountExcludingTax !== undefined ? data.amountExcludingTax : null,
+    unitCost: data.unitCost ?? null,
+    quantity: data.quantity ?? null,
+    discountAmount: data.discountAmount ?? null,
+    discountPercent: data.discountPercent ?? null,
+    discountAppliedBeforeTax: data.discountAppliedBeforeTax ?? null,
+    amountExcludingTax: data.amountExcludingTax ?? null,
     taxCode: data.taxCode || null,
-    taxPercent:
-      data.taxPercent !== undefined ? data.taxPercent : null,
-    totalTaxAmount:
-      data.totalTaxAmount !== undefined ? data.totalTaxAmount : null,
-    amountIncludingTax:
-      data.amountIncludingTax !== undefined ? data.amountIncludingTax : null,
-    invoiceDiscountAllocation:
-      data.invoiceDiscountAllocation !== undefined ? data.invoiceDiscountAllocation : null,
-    netAmount:
-      data.netAmount !== undefined ? data.netAmount : null,
-    netTaxAmount:
-      data.netTaxAmount !== undefined ? data.netTaxAmount : null,
-    netAmountIncludingTax:
-      data.netAmountIncludingTax !== undefined ? data.netAmountIncludingTax : null,
-    itemVariantId:
-      data.itemVariantId && data.itemVariantId !== '00000000-0000-0000-0000-000000000000'
-        ? data.itemVariantId
-        : null,
-    locationId:
-      data.locationId && data.locationId !== '00000000-0000-0000-0000-000000000000'
-        ? data.locationId
-        : null,
+    taxPercent: data.taxPercent ?? null,
+    totalTaxAmount: data.totalTaxAmount ?? null,
+    amountIncludingTax: data.amountIncludingTax ?? null,
+    invoiceDiscountAllocation: data.invoiceDiscountAllocation ?? null,
+    netAmount: data.netAmount ?? null,
+    netTaxAmount: data.netTaxAmount ?? null,
+    netAmountIncludingTax: data.netAmountIncludingTax ?? null,
+    expectedReceiptDate: data.expectedReceiptDate ? this.parseDateString(data.expectedReceiptDate) : null,
+    itemVariantId: data.itemVariantId && data.itemVariantId !== '00000000-0000-0000-0000-000000000000' ? data.itemVariantId : null,
+    locationId: data.locationId && data.locationId !== '00000000-0000-0000-0000-000000000000' ? data.locationId : null,
     apiSource: 'v2.0',
-  });
+  };
+
+  return this.purchaseCreditMemoLineRepository.create(purchaseCreditMemoLineData);
 }
 
 // ----------------------------------
@@ -1367,7 +1241,7 @@ async syncGeneralLedgerEntries(fullSync: boolean = false): Promise<void> {
   }
 }
 
-private transformV2GeneralLedgerEntry(data: any): GeneralLedgerEntry {
+private transformV2GeneralLedgerEntry(data: V2GeneralLedgerEntryData): GeneralLedgerEntry {
   const glEntry = new GeneralLedgerEntry();
 
   glEntry.id = data.id;
@@ -1382,10 +1256,9 @@ private transformV2GeneralLedgerEntry(data: any): GeneralLedgerEntry {
   glEntry.creditAmount = data.creditAmount ?? null;
   glEntry.additionalCurrencyDebitAmount = data.additionalCurrencyDebitAmount ?? null;
   glEntry.additionalCurrencyCreditAmount = data.additionalCurrencyCreditAmount ?? null;
-  glEntry.lastModifiedDateTime = this.parseDateString(data.lastModifiedDateTime) || null;
-  glEntry.apiSource = 'v2.0';
+  glEntry.lastModifiedDateTime = data.lastModifiedDateTime ? this.parseDateString(data.lastModifiedDateTime) : null;
 
-  return glEntry;
+  return this.generalLedgerEntryRepository.create(glEntry);
 }
 
 // -------------------------------
@@ -1416,8 +1289,9 @@ async syncCustomerLedgerEntries(fullSync: boolean = false) {
     throw error;
   }
 }
-private transformTmcCustomerLedgerEntry(data: any): CustomerLedgerEntry {
-  return this.customerLedgerEntryRepository.create({
+
+private transformTmcCustomerLedgerEntry(data: TmcCustomerLedgerEntryData): CustomerLedgerEntry {
+  const customerLedgerEntryData: DeepPartial<CustomerLedgerEntry> = {
     entryNo: data.entryNo,
     acceptedPaymentTolerance: data.acceptedPaymentTolerance,
     acceptedPmtDiscTolerance: data.acceptedPmtDiscTolerance,
@@ -1435,7 +1309,7 @@ private transformTmcCustomerLedgerEntry(data: any): CustomerLedgerEntry {
     cfdiCancellationReasonCode: data.cfdiCancellationReasonCode || null,
     calculateInterest: data.calculateInterest,
     certificateSerialNo: data.certificateSerialNo || null,
-    closedAtDate: this.parseDateString(data.closedAtDate) || null,
+    closedAtDate: data.closedAtDate ? this.parseDateString(data.closedAtDate) : null,
     closedByAmount: data.closedByAmount,
     closedByAmountLCY: data.closedByAmountLCY,
     closedByCurrencyAmount: data.closedByCurrencyAmount,
@@ -1457,10 +1331,10 @@ private transformTmcCustomerLedgerEntry(data: any): CustomerLedgerEntry {
     digitalStampSAT: data.digitalStampSAT || null,
     dimensionSetID: data.dimensionSetID,
     directDebitMandateID: data.directDebitMandateID || null,
-    documentDate: this.parseDateString(data.documentDate) || null,
+    documentDate: data.documentDate ? this.parseDateString(data.documentDate) : null,
     documentNo: data.documentNo || null,
     documentType: data.documentType || null,
-    dueDate: this.parseDateString(data.dueDate) || null,
+    dueDate: data.dueDate ? this.parseDateString(data.dueDate) : null,
     electronicDocumentSent: data.electronicDocumentSent,
     electronicDocumentStatus: data.electronicDocumentStatus || null,
     errorCode: data.errorCode || null,
@@ -1470,14 +1344,15 @@ private transformTmcCustomerLedgerEntry(data: any): CustomerLedgerEntry {
     fiscalInvoiceNumberPAC: data.fiscalInvoiceNumberPAC || null,
     globalDimension1Code: data.globalDimension1Code || null,
     globalDimension2Code: data.globalDimension2Code || null,
-    // Map additional properties as needed
-    postingDate: this.parseDateString(data.postingDate) || null,
+    postingDate: data.postingDate ? this.parseDateString(data.postingDate) : null,
     remainingAmount: data.remainingAmount,
     remainingAmtLCY: data.remainingAmtLCY,
     systemCreatedAt: data.systemCreatedAt ? new Date(data.systemCreatedAt) : null,
-    lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
+    lastModifiedDateTime: data.lastModifiedDateTime ? this.parseDateString(data.lastModifiedDateTime) : null,
     apiSource: 'tmc',
-  });
+  };
+
+  return this.customerLedgerEntryRepository.create(customerLedgerEntryData);
 }
 
 // ----------------------------------
@@ -1553,7 +1428,7 @@ async syncAccounts(fullSync: boolean = false) {
 }
 
 // Transformation method
-private transformV2Account(data: any): Account {
+private transformV2Account(data: V2AccountData): Account {
   return this.accountRepository.create({
     id: data.id,
     number: data.number,
@@ -1601,7 +1476,7 @@ async syncBankAccounts(fullSync: boolean = false) {
 }
 
 // Transformation method
-private transformV2BankAccount(data: any): BankAccount {
+private transformV2BankAccount(data: V2BankAccountData): BankAccount {
   return this.bankAccountRepository.create({
     id: data.id,
     number: data.number,
@@ -1612,10 +1487,9 @@ private transformV2BankAccount(data: any): BankAccount {
     currencyId:
       data.currencyId && data.currencyId !== '00000000-0000-0000-0000-000000000000' ? data.currencyId : null,
     iban: data.iban || null,
-    intercompanyEnabled:
-      data.intercompanyEnabled !== undefined ? data.intercompanyEnabled : null,
-      lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
-      apiSource: 'v2.0',
+    intercompanyEnabled: data.intercompanyEnabled !== undefined ? data.intercompanyEnabled : null,
+    lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
+    apiSource: 'v2.0',
   });
 }
 
@@ -1664,7 +1538,7 @@ async syncShipToAddresses(fullSync: boolean = false) {
     throw error;
   }
 }
-private transformShipToAddress(data: any): ShipToAddress {
+private transformShipToAddress(data: ShipToAddressData): ShipToAddress {
   return this.shipToAddressRepository.create({
     customerNo: data.customerNo,
     code: data.code,
@@ -1722,7 +1596,7 @@ async syncJobs(fullSync: boolean = false) {
   }
 }
 
-private transformJob(data: any): Job {
+private transformJob(data: JobData): Job {
   return this.jobRepository.create({
     no: data.no,
     systemId: data.systemId || null,
@@ -1731,12 +1605,12 @@ private transformJob(data: any): Job {
     status: data.status || null,
     personResponsible: data.personResponsible || null,
     nextInvoiceDate: 
-    data.nextInvoiceDate && data.nextInvoiceDate !== '0001-01-01' 
-      ? this.parseDateString(data.nextInvoiceDate) 
-      : null,
+      data.nextInvoiceDate && data.nextInvoiceDate !== '0001-01-01' 
+        ? this.parseDateString(data.nextInvoiceDate) 
+        : null,
     jobPostingGroup: data.jobPostingGroup || null,
     searchDescription: data.searchDescription || null,
-    systemCreatedAt: data.SystemCreatedAt ? new Date(data.SystemCreatedAt) : null,
+    systemCreatedAt: data.systemCreatedAt ? new Date(data.systemCreatedAt) : null,
     lastModifiedDateTime: this.parseDateString(data.lastModifiedDateTime) || null,
     apiSource: 'tmc',
   });
@@ -1759,7 +1633,7 @@ async syncBillingScheduleLines(fullSync: boolean = false) {
 
     // Save fetched billing schedule lines
     for (const data of billingScheduleLines) {
-      // Transform API data into BillingScheduleLine entity
+      // Transform API data into a DeepPartial<BillingScheduleLine>
       const billingLineEntity = this.transformBillingScheduleLine(data);
 
       // Save the entity to the database
@@ -1776,71 +1650,71 @@ async syncBillingScheduleLines(fullSync: boolean = false) {
   }
 }
 
-private transformBillingScheduleLine(data: any): BillingScheduleLine {
-  return this.billingScheduleLineRepository.create({
-    bssiArcbBillingScheduleNumber: data.BssiArcbBillingScheduleNumber,
-    lineNo: data.LineNo,
-    type: data.Type_,
-    itemNo: data.ItemNo || null,
-    description: data.Description || null,
-    billingType: data.BillingType || null,
-    locationCode: data.LocationCode || null,
-    unitMeasureCode: data.UnitMeasureCode || null,
-    pricingMethod: data.PricingMethod || null,
-    price: data.Price || null,
-    qty: data.Qty || null,
-    amount: data.Amount || null,
-    billingFrequency: data.BillingFrequency || null,
-    billingStartDate: this.parseDateString(data.BillingStartDate) || null,
-    billingEndDate: this.parseDateString(data.BillingEndDate) || null,
-    interval: data.Interval || null,
-    taxGroupCode: data.TaxGroupCode || null,
-    taxLiable: data.TaxLiable || null,
-    taxAreadCode: data.TaxAreadCode || null,
-    autoRenewed: data.AutoRenewed || null,
-    usageOption: data.UsageOption || null,
-    usageIdentifier: data.UsageIdentifier || null,
-    initialReading: data.InitialReading || null,
-    renewalLines: data.RenewalLines || null,
-    revenueSplit: data.RevenueSplit || null,
-    parentAmount: data.ParentAmount || null,
-    bssiCalculationMethod: data.BssiCalculationMethod || null,
-    bssiDayofInvoiceDate: data.BssiDayofInvoiceDate || null,
-    bssiNumofPeriod: data.BssiNumofPeriod || null,
-    bssiAlignmentDate: this.parseDateString(data.BssiAlignmentDate) || null,
-    bssiEstimatedQty: data.BssiEstimatedQty || null,
-    bssiStatus: data.BssiStatus || null,
-    bssiUdfL1: data.Bssi_UDF_L1 || null,
-    bssiUdfL2: data.Bssi_UDF_L2 || null,
-    bssiUdfL3: data.Bssi_UDF_L3 || null,
-    bssiUdfL4: data.Bssi_UDF_L4 || null,
-    bssiUdfL5: data.Bssi_UDF_L5 || null,
-    bssiUdfL6: this.parseDateString(data.Bssi_UDF_L6) || null,
-    bssiUdfL7: data.Bssi_UDF_L7 || null,
-    bssiUdfL8: data.Bssi_UDF_L8 || null,
-    bssiUdfL9: data.Bssi_UDF_L9 || null,
-    bssiUdfL10: data.Bssi_UDF_L10 || null,
-    bssiUdfL11: data.Bssi_UDF_L11 || null,
-    bssiUdfL12: data.Bssi_UDF_L12 || null,
-    bssiUdfL13: data.Bssi_UDF_L13 || null,
-    bssiUdfL14: this.parseDateString(data.Bssi_UDF_L14) || null,
-    bssiUdfL15: this.parseDateString(data.Bssi_UDF_L15) || null,
-    bssiUdfL16: this.parseDateString(data.Bssi_UDF_L16) || null,
-    bssiUdfL17: this.parseDateString(data.Bssi_UDF_L17) || null,
-    bssiUdfL18: data.Bssi_UDF_L18 || null,
-    bssiUdfL19: data.Bssi_UDF_L19 || null,
-    shortcutDimension1Code: data.ShortcutDimension1Code || null,
-    shortcutDimension2Code: data.ShortcutDimension2Code || null,
-    bssiShortcutDimension3: data.BssiShortcutDimension3 || null,
-    bssiShortcutDimension4: data.BssiShortcutDimension4 || null,
-    bssiShortcutDimension5: data.BssiShortcutDimension5 || null,
-    bssiShortcutDimension6: data.BssiShortcutDimension6 || null,
-    bssiShortcutDimension7: data.BssiShortcutDimension7 || null,
-    bssiShortcutDimension8: data.BssiShortcutDimension8 || null,
-    bssiAccumulateImport: data.BssiAccumulateImport || null,
-    shiptoCode: data.ShiptoCode || null,
+private transformBillingScheduleLine(data: BillingScheduleLineData): DeepPartial<BillingScheduleLine> {
+  return {
+    bssiArcbBillingScheduleNumber: data.bssiArcbBillingScheduleNumber,
+    lineNo: data.LineNo ?? null,
+    type: data.Type_ ?? null,
+    itemNo: data.ItemNo ?? null,
+    description: data.Description ?? null,
+    billingType: data.BillingType ?? null,
+    locationCode: data.LocationCode ?? null,
+    unitMeasureCode: data.UnitMeasureCode ?? null,
+    pricingMethod: data.PricingMethod ?? null,
+    price: data.Price ?? null,
+    qty: data.Qty ?? null,
+    amount: data.Amount ?? null,
+    billingFrequency: data.BillingFrequency ?? null,
+    billingStartDate: data.BillingStartDate ? this.parseDateString(data.BillingStartDate) : null,
+    billingEndDate: data.BillingEndDate ? this.parseDateString(data.BillingEndDate) : null,
+    interval: data.Interval ?? null,
+    taxGroupCode: data.TaxGroupCode ?? null,
+    taxLiable: data.TaxLiable ?? null,
+    taxAreadCode: data.TaxAreadCode ?? null,
+    autoRenewed: data.AutoRenewed ?? null,
+    usageOption: data.UsageOption ?? null,
+    usageIdentifier: data.UsageIdentifier ?? null,
+    initialReading: data.InitialReading ?? null,
+    renewalLines: data.RenewalLines ?? null,
+    revenueSplit: data.RevenueSplit ?? null,
+    parentAmount: data.ParentAmount ?? null,
+    bssiCalculationMethod: data.BssiCalculationMethod ?? null,
+    bssiDayofInvoiceDate: data.BssiDayofInvoiceDate ?? null,
+    bssiNumofPeriod: data.BssiNumofPeriod ?? null,
+    bssiAlignmentDate: data.BssiAlignmentDate ? this.parseDateString(data.BssiAlignmentDate) : null,
+    bssiEstimatedQty: data.BssiEstimatedQty ?? null,
+    bssiStatus: data.BssiStatus ?? null,
+    bssiUdfL1: data.Bssi_UDF_L1 ?? null,
+    bssiUdfL2: data.Bssi_UDF_L2 ?? null,
+    bssiUdfL3: data.Bssi_UDF_L3 ?? null,
+    bssiUdfL4: data.Bssi_UDF_L4 ?? null,
+    bssiUdfL5: data.Bssi_UDF_L5 ?? null,
+    bssiUdfL6: data.Bssi_UDF_L6 ? this.parseDateString(data.Bssi_UDF_L6) : null,
+    bssiUdfL7: data.Bssi_UDF_L7 ?? null,
+    bssiUdfL8: data.Bssi_UDF_L8 ?? null,
+    bssiUdfL9: data.Bssi_UDF_L9 ?? null,
+    bssiUdfL10: data.Bssi_UDF_L10 ?? null,
+    bssiUdfL11: data.Bssi_UDF_L11 ?? null,
+    bssiUdfL12: data.Bssi_UDF_L12 ?? null,
+    bssiUdfL13: data.Bssi_UDF_L13 ?? null,
+    bssiUdfL14: data.Bssi_UDF_L14 ? this.parseDateString(data.Bssi_UDF_L14) : null,
+    bssiUdfL15: data.Bssi_UDF_L15 ? this.parseDateString(data.Bssi_UDF_L15) : null,
+    bssiUdfL16: data.Bssi_UDF_L16 ? this.parseDateString(data.Bssi_UDF_L16) : null,
+    bssiUdfL17: data.Bssi_UDF_L17 ? this.parseDateString(data.Bssi_UDF_L17) : null,
+    bssiUdfL18: data.Bssi_UDF_L18 ?? null,
+    bssiUdfL19: data.Bssi_UDF_L19 ?? null,
+    shortcutDimension1Code: data.ShortcutDimension1Code ?? null,
+    shortcutDimension2Code: data.ShortcutDimension2Code ?? null,
+    bssiShortcutDimension3: data.BssiShortcutDimension3 ?? null,
+    bssiShortcutDimension4: data.BssiShortcutDimension4 ?? null,
+    bssiShortcutDimension5: data.BssiShortcutDimension5 ?? null,
+    bssiShortcutDimension6: data.BssiShortcutDimension6 ?? null,
+    bssiShortcutDimension7: data.BssiShortcutDimension7 ?? null,
+    bssiShortcutDimension8: data.BssiShortcutDimension8 ?? null,
+    bssiAccumulateImport: data.BssiAccumulateImport ?? null,
+    shiptoCode: data.ShiptoCode ?? null,
     apiSource: 'tmc',
-  });
+  };
 }
 
 // ----------------------------------

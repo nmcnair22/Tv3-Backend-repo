@@ -56,7 +56,6 @@ async getGLEntriesForInvoices(invoiceNumbers: string[]): Promise<Record<string, 
         this.logger.warn(`No GL entry found for invoice number: ${invoiceNumber}`);
       }
     } catch (error) {
-    const err = error as any;
       this.logger.error(`Failed to fetch GL entries for invoice number ${invoiceNumber}`, error);
       throw new HttpException(
         `Failed to fetch GL entries for invoice number ${invoiceNumber}`,
@@ -113,7 +112,7 @@ async getGLEntriesForInvoices(invoiceNumbers: string[]): Promise<Record<string, 
     this.logger.debug(`Fetched ${glEntries.length} GL entries for document number: ${documentNumber}`);
     return glEntries;
   } catch (error) {
-    const err = error as any;
+    const err = error as Error;
     // Step 7: Error handling
     this.logger.error(`Failed to fetch GL entries for document number ${documentNumber}: ${err.message}`);
     throw new HttpException(
@@ -151,7 +150,7 @@ async getTEMPayments(startDate: string, endDate: string): Promise<GLEntry[]> {
     this.logger.debug(`Fetched TEM payments: ${JSON.stringify(response.data.value)}`);
     return response.data.value;
   } catch (error) {
-    const err = error as any;
+    const err = error as Error;
     this.logger.error(`Failed to fetch TEM payments: ${err.message}`);
     throw new HttpException('Failed to fetch TEM payments', HttpStatus.INTERNAL_SERVER_ERROR);
   }

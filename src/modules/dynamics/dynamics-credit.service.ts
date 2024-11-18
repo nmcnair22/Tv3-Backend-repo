@@ -40,7 +40,7 @@ export class DynamicsCreditService extends DynamicsBaseService {
           params: nextLink ? {} : params,
         };
 
-        let response: AxiosResponse<any>;
+        let response: AxiosResponse<{ value: CreditEntry[], '@odata.nextLink'?: string }>;
         if (nextLink) {
           this.logger.debug(`Fetching next page of credit memos from ${nextLink}`);
           response = await firstValueFrom(this.httpService.get(nextLink, config));
@@ -49,7 +49,7 @@ export class DynamicsCreditService extends DynamicsBaseService {
           response = await firstValueFrom(this.httpService.get(url, config));
         }
 
-        const fetchedEntries: CreditEntry[] = response.data.value.map((entry: any) => ({
+        const fetchedEntries: CreditEntry[] = response.data.value.map((entry: CreditEntry) => ({
           entryNumber: entry.entryNumber,
           postingDate: entry.postingDate,
           documentNumber: entry.documentNumber,
@@ -63,12 +63,14 @@ export class DynamicsCreditService extends DynamicsBaseService {
       this.logger.debug(`Fetched ${entries.length} credit memos from generalLedgerEntries`);
 
       return entries;
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.logger.error('Failed to fetch credit memos from generalLedgerEntries', error);
-      if (error.response) {
-        this.logger.error(`Error response data: ${JSON.stringify(error.response.data)}`);
+      if (error instanceof Error && (error as { response?: { data?: Record<string, unknown> } }).response) {
+        const axiosError = error as { response?: { data?: Record<string, unknown> } };
+        this.logger.error(`Error response data: ${JSON.stringify(axiosError.response?.data)}`);
       }
-      throw new HttpException('Failed to fetch credit memos from generalLedgerEntries', error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR);
+      const status = (error as { response?: { status?: number } }).response?.status || HttpStatus.INTERNAL_SERVER_ERROR;
+      throw new HttpException('Failed to fetch credit memos from generalLedgerEntries', status);
     }
   }
 }

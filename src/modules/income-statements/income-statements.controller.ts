@@ -10,8 +10,7 @@ export class IncomeStatementsController {
   async getIncomeStatements(@Query('startDate') startDate: string, @Query('endDate') endDate: string) {
     try {
       return await this.incomeStatementsService.getIncomeStatements(startDate, endDate);
-    } catch (error) {
-    const err = error as any;
+    } catch {
       throw new HttpException('Error fetching income statements', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }

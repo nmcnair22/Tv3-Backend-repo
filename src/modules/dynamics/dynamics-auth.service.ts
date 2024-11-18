@@ -55,7 +55,7 @@ export class DynamicsAuthService {
       this.logger.debug(`Access token fetched successfully`);
       return this.accessToken;
     } catch (error) {
-    const err = error as any;
+    const err = error as { message: string; response?: { data: Record<string, unknown> } };
       this.logger.error(`Failed to fetch access token: ${err.message}`);
       if (err.response) {
         this.logger.error(
@@ -70,7 +70,7 @@ export class DynamicsAuthService {
   }
 
   // Get headers for API requests
-  async getHeaders(): Promise<any> {
+  async getHeaders(): Promise<{ Authorization: string; 'Content-Type': string; Accept: string }> {
     const accessToken = await this.fetchAccessToken();
     return {
       Authorization: `Bearer ${accessToken}`,

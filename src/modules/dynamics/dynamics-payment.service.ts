@@ -46,7 +46,7 @@ export class DynamicsPaymentService extends DynamicsBaseService {
           params: nextLink ? {} : params,
         };
 
-        let response: AxiosResponse<any>;
+        let response: AxiosResponse<{ value: PaymentCustomerLedger[]; '@odata.nextLink'?: string }>;
         if (nextLink) {
           this.logger.debug(`Fetching next page of Customer Ledger payments from ${nextLink}`);
           response = await firstValueFrom(this.httpService.get(nextLink, config));
@@ -56,7 +56,7 @@ export class DynamicsPaymentService extends DynamicsBaseService {
         }
 
         const fetchedEntries: PaymentCustomerLedger[] = response.data.value.map(
-          (entry: any) => ({
+          (entry: PaymentCustomerLedger) => ({
             entryNo: entry.entryNo,
             customerName: entry.customerName,
             amount: entry.amount,
@@ -71,8 +71,8 @@ export class DynamicsPaymentService extends DynamicsBaseService {
             transactionNo: entry.transactionNo,
             paymentType: 'CustomerLedger', // Assign default or map accordingly
             depositEntryNo: '', // Assign default or map accordingly
-            createdAt: undefined, // Let TypeORM handle it
-            updatedAt: undefined, // Let TypeORM handle it
+            createdAt: undefined as Date | undefined, // Let TypeORM handle it
+            updatedAt: undefined as Date | undefined, // Let TypeORM handle it
           }),
         );
 
@@ -83,14 +83,15 @@ export class DynamicsPaymentService extends DynamicsBaseService {
       this.logger.debug(`Fetched ${entries.length} customer payments from CustLedgerEntries`);
 
       return entries;
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: unknown; status?: number } };
       this.logger.error('Failed to fetch customer payments from CustLedgerEntries', error);
-      if (error.response) {
-        this.logger.error(`Error response data: ${JSON.stringify(error.response.data)}`);
+      if (err.response) {
+        this.logger.error(`Error response data: ${JSON.stringify(err.response.data)}`);
       }
       throw new HttpException(
         'Failed to fetch customer payments from CustLedgerEntries',
-        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+        err.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
@@ -135,7 +136,7 @@ export class DynamicsPaymentService extends DynamicsBaseService {
           params: nextLink ? {} : params,
         };
 
-        let response: AxiosResponse<any>;
+        let response: AxiosResponse<{ value: Invoice[]; '@odata.nextLink'?: string }>;
         if (nextLink) {
           this.logger.debug(`Fetching next page of invoices from ${nextLink}`);
           response = await firstValueFrom(this.httpService.get(nextLink, config));
@@ -144,7 +145,7 @@ export class DynamicsPaymentService extends DynamicsBaseService {
           response = await firstValueFrom(this.httpService.get(url, config));
         }
 
-        const fetchedInvoices: Invoice[] = response.data.value.map((entry: any) => ({
+        const fetchedInvoices: Invoice[] = response.data.value.map((entry: Invoice) => ({
           entryNo: entry.entryNo,
           closedByEntryNo: entry.closedByEntryNo,
           customerName: entry.customerName,
@@ -169,21 +170,23 @@ export class DynamicsPaymentService extends DynamicsBaseService {
       } while (nextLink);
 
       return invoices;
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.logger.error(
         `Failed to fetch invoices for closedByEntryNo(s): ${closedEntryNos.join(
           ', ',
         )}`,
         error,
       );
-      if (error.response) {
-        this.logger.error(`Error response data: ${JSON.stringify(error.response.data)}`);
+      const err = error as { response?: { data?: unknown; status?: number } };
+      if (err.response) {
+        const err = error as { response?: { data?: unknown; status?: number } };
+        this.logger.error(`Error response data: ${JSON.stringify(err.response?.data)}`);
       }
       throw new HttpException(
         `Failed to fetch invoices for closedByEntryNo(s): ${closedEntryNos.join(
           ', ',
         )}`,
-        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+        (error as { response?: { status?: number } }).response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
@@ -220,7 +223,7 @@ export class DynamicsPaymentService extends DynamicsBaseService {
         const response = await firstValueFrom(this.httpService.get(url, config));
 
         const fetchedPayments: PaymentCustomerLedger[] = response.data.value.map(
-          (entry: any) => ({
+          (entry: PaymentCustomerLedger) => ({
             entryNo: entry.entryNo,
             customerName: entry.customerName,
             amount: entry.amount,
@@ -235,8 +238,8 @@ export class DynamicsPaymentService extends DynamicsBaseService {
             transactionNo: entry.transactionNo,
             paymentType: 'CustomerLedger', // Assign default or map accordingly
             depositEntryNo: '', // Assign default or map accordingly
-            createdAt: undefined, // Let TypeORM handle it
-            updatedAt: undefined, // Let TypeORM handle it
+            createdAt: undefined as Date | undefined, // Let TypeORM handle it
+            updatedAt: undefined as Date | undefined, // Let TypeORM handle it
           }),
         );
 
@@ -244,14 +247,15 @@ export class DynamicsPaymentService extends DynamicsBaseService {
       }
 
       return payments;
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.logger.error('Failed to fetch payments by invoice numbers', error);
-      if (error.response) {
-        this.logger.error(`Error response data: ${JSON.stringify(error.response.data)}`);
+      const err = error as { response?: { data?: unknown; status?: number } };
+      if (err.response) {
+        this.logger.error(`Error response data: ${JSON.stringify(err.response.data)}`);
       }
       throw new HttpException(
         'Failed to fetch payments by invoice numbers',
-        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+        err.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
@@ -289,7 +293,7 @@ export class DynamicsPaymentService extends DynamicsBaseService {
           params: nextLink ? {} : params,
         };
 
-        let response: AxiosResponse<any>;
+        let response: AxiosResponse<{ value: PaymentGL[]; '@odata.nextLink'?: string }>;
         if (nextLink) {
           this.logger.debug(
             `Fetching next page of G/L payments from ${nextLink}`,
@@ -305,7 +309,7 @@ export class DynamicsPaymentService extends DynamicsBaseService {
         }
 
         const fetchedPayments: PaymentGL[] = response.data.value.map(
-          (entry: any) => ({
+          (entry: PaymentGL) => ({
             entryNo: entry.entryNo,
             customerName: entry.customerName,
             amount: entry.amount,
@@ -319,8 +323,6 @@ export class DynamicsPaymentService extends DynamicsBaseService {
             postingDate: entry.postingDate,
             sourceCode: entry.sourceCode,
             transactionNo: entry.transactionNo,
-            itemNumber: entry.itemNumber,
-            totalAmount: entry.totalAmount,
             paymentType: 'GL',
           }),
         );
@@ -334,19 +336,20 @@ export class DynamicsPaymentService extends DynamicsBaseService {
       );
 
       return payments;
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.logger.error(
         'Failed to fetch payments from generalLedgerEntries',
         error,
       );
-      if (error.response) {
+      const err = error as { response?: { data?: unknown; status?: number } };
+      if (err.response) {
         this.logger.error(
-          `Error response data: ${JSON.stringify(error.response.data)}`,
+          `Error response data: ${JSON.stringify((error as { response?: { data?: unknown } }).response?.data)}`,
         );
       }
       throw new HttpException(
         'Failed to fetch payments from generalLedgerEntries',
-        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+        (error as { response?: { status?: number } }).response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
@@ -362,7 +365,7 @@ export class DynamicsPaymentService extends DynamicsBaseService {
     customerNumber: string,
     startDate: string,
     endDate: string,
-  ): Promise<any[]> {
+  ): Promise<{ paymentDate: Date | null; paymentAmount: number; description: string; paymentEntryNo: number; relatedInvoices: { invoiceNumber: string; invoiceDate: Date | null; amount: number }[] }[]> {
     this.logger.debug(`Fetching payments for customer ${customerNumber}`);
 
     const paymentsUrl = `${this.integrationApiUrl}/CustLedgerEntries`;
@@ -384,7 +387,7 @@ export class DynamicsPaymentService extends DynamicsBaseService {
           params: nextLink ? {} : paymentParams,
         };
 
-        let response: AxiosResponse<any>;
+        let response: AxiosResponse<{ value: PaymentCustomerLedger[]; '@odata.nextLink'?: string }>;
         if (nextLink) {
           response = await firstValueFrom(this.httpService.get(nextLink, config));
         } else {
@@ -393,7 +396,7 @@ export class DynamicsPaymentService extends DynamicsBaseService {
 
         if (response.data.value && Array.isArray(response.data.value)) {
           const fetchedPayments: PaymentCustomerLedger[] = response.data.value.map(
-            (entry: any) => ({
+            (entry: PaymentCustomerLedger) => ({
               entryNo: entry.entryNo,
               customerName: entry.customerName,
               amount: entry.amount,
@@ -453,8 +456,8 @@ export class DynamicsPaymentService extends DynamicsBaseService {
       }
 
       return paymentsWithInvoices;
-    } catch (error: any) {
-      const err = error as any;
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: unknown; status?: number } };
       this.logger.error(`Failed to fetch payments for customer ${customerNumber}`, error);
       if (err.response) {
         this.logger.error(`Error response data: ${JSON.stringify(err.response.data)}`);

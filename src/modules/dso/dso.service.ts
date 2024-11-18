@@ -27,7 +27,7 @@ export class DsoService {
   }
 
   // Function to fetch payments within a date range
-  private async getPayments(startDate: string, endDate: string): Promise<any[]> {
+  private async getPayments(startDate: string, endDate: string): Promise<{ entry_no: number; document_no: string; posting_date: string }[]> {
     this.logger.log(`Fetching payments between ${startDate} and ${endDate}`);
     const paymentsQuery = `
       SELECT entry_no, document_no, posting_date
@@ -39,7 +39,7 @@ export class DsoService {
   }
 
   // Function to fetch invoices related to given payment entry numbers
-  private async getInvoices(paymentEntryNos: number[]): Promise<any[]> {
+  private async getInvoices(paymentEntryNos: number[]): Promise<{ entry_no: number; document_no: string; closed_by_entry_no: number }[]> {
     if (paymentEntryNos.length === 0) return [];
 
     this.logger.log(`Fetching invoices for payment entryNos=${paymentEntryNos.join(', ')}`);
@@ -55,7 +55,7 @@ export class DsoService {
   }
 
   // Function to fetch sales invoices based on document_no only (ignoring api_source)
-  private async getSalesInvoices(documentNos: string[]): Promise<any[]> {
+  private async getSalesInvoices(documentNos: string[]): Promise<{ number: string; customer_name: string; invoice_date: string; posting_date: string }[]> {
     if (documentNos.length === 0) return [];
 
     // Trim and ensure uniqueness
@@ -113,7 +113,7 @@ export class DsoService {
       this.logger.log(`Fetched SalesInvoice numbers: ${fetchedSalesInvoiceNumbers.join(', ')}`);
 
       // Create a map for quick lookup based on trimmed number
-      const salesInvoiceMap = new Map<string, any>();
+      const salesInvoiceMap = new Map<string, { number: string; customer_name: string; invoice_date: string; posting_date: string }>();
       salesInvoices.forEach(si => {
         salesInvoiceMap.set(si.number.trim(), si);
       });

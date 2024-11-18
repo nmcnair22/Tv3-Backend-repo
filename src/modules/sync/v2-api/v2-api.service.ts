@@ -44,14 +44,14 @@ export class V2ApiService {
   /**
    * Make a GET request to the specified URL with authentication and optional query parameters.
    */
-  private async getRequest(url: string, params?: Record<string, any>): Promise<any[]> {
+  private async getRequest<T>(url: string, params?: Record<string, string | number | boolean>): Promise<T[]> {
     const headers = await this.dynamicsAuthService.getHeaders();
     let config: AxiosRequestConfig = {
       headers,
       params,
     };
 
-    let allData = [];
+    let allData: T[] = [];
     let nextUrl: string | undefined = url;
 
     try {
@@ -83,7 +83,7 @@ export class V2ApiService {
 
       return allData;
     } catch (error) {
-      const err = error as any;
+      const err = error as { response?: { status: number; statusText: string; data: any; headers: any }; request?: any; message: string; config?: { url?: string } };
 
       // Handle specific HTTP errors
       if (err.response) {

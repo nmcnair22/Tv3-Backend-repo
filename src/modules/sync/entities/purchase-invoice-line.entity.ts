@@ -64,7 +64,7 @@ export class PurchaseInvoiceLine {
   @Column({
     name: 'description2',
     type: 'varchar',
-    length: 50,
+    length: 100,
     nullable: true,
   })
   description2?: string;

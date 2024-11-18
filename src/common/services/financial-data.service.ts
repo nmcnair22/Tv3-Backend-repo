@@ -12,15 +12,14 @@ import { DynamicsReportsService } from '../../modules/dynamics/dynamics-reports.
 import { AgedReceivableItem } from '../types/aged-receivables.types';
 import { CustomerFinancialDetail } from '../types/customer-financial-detail.types';
 
-
 interface PaymentHistoryRecord {
-  paymentDate: string;
+  paymentDate: string; // Ensure this is a string
   paymentAmount: number;
   description: string;
   paymentEntryNo: number;
   relatedInvoices: {
     invoiceNumber: string;
-    invoiceDate: string;
+    invoiceDate: string; // Ensure this is a string
     amount: number;
   }[];
 }
@@ -39,126 +38,126 @@ export class FinancialDataService {
     private readonly dynamicsCustomerService: DynamicsCustomerService,
   ) {}
 
-/**
- * Retrieves all necessary inflows data for the dashboard within the specified date range.
- * @param startDate - The start date in 'YYYY-MM-DD' format.
- * @param endDate - The end date in 'YYYY-MM-DD' format.
- * @returns An object containing inflows data.
- */
-async getInflowsData(startDate: string, endDate: string): Promise<{
-  startingReceivables: number;
-  endingReceivables: number;
-  netChangeReceivables: number;
-  totalNewInvoices: number;
-  totalCredits: number;
-  totalPaymentsReceived: number;
-  revenueCategories: { category: string; amount: number }[];
-  paymentsByCustomer: {
-    customer: string;
-    amount: number;
-    payments: {
+  /**
+   * Retrieves all necessary inflows data for the dashboard within the specified date range.
+   * @param startDate - The start date in 'YYYY-MM-DD' format.
+   * @param endDate - The end date in 'YYYY-MM-DD' format.
+   * @returns An object containing inflows data.
+   */
+  async getInflowsData(startDate: string, endDate: string): Promise<{
+    startingReceivables: number;
+    endingReceivables: number;
+    netChangeReceivables: number;
+    totalNewInvoices: number;
+    totalCredits: number;
+    totalPaymentsReceived: number;
+    revenueCategories: { category: string; amount: number }[];
+    paymentsByCustomer: {
+      customer: string;
       amount: number;
-      postingDate: string;
-      documentNo: string;
-      description: string;
-      // Include other fields as needed
+      payments: {
+        amount: number;
+        postingDate: string; // Changed to string
+        documentNo: string;
+        description: string;
+        // Include other fields as needed
+      }[];
     }[];
-  }[];
-}> {
-  this.logger.debug(`Fetching inflows data from ${startDate} to ${endDate}`);
+    totalTEMPayments: number;
+  }> {
+    this.logger.debug(`Fetching inflows data from ${startDate} to ${endDate}`);
 
-  // Step 1: Fetch starting and ending receivables from balance sheet
-  const [startingReceivables, endingReceivables] = await Promise.all([
-    this.getReceivablesForDate(startDate),
-    this.getReceivablesForDate(endDate),
-  ]);
+    // Step 1: Fetch starting and ending receivables from balance sheet
+    const [startingReceivables, endingReceivables] = await Promise.all([
+      this.getReceivablesForDate(startDate),
+      this.getReceivablesForDate(endDate),
+    ]);
 
-  const netChangeReceivables = endingReceivables - startingReceivables;
+    const netChangeReceivables = endingReceivables - startingReceivables;
 
-  // Step 2: Fetch posted sales invoices within the date range
-  const postedInvoices = await this.dynamicsInvoiceService.getInvoices(startDate, endDate);
+    // Step 2: Fetch posted sales invoices within the date range
+    const postedInvoices = await this.dynamicsInvoiceService.getInvoices(startDate, endDate);
 
-  // Step 3: Fetch income accounts and map account numbers to categories
-  const incomeAccounts = await this.dynamicsAccountService.getIncomeAccounts();
-  const accountNumberToDisplayName = new Map<string, string>();
-  incomeAccounts.forEach((account) => {
-    accountNumberToDisplayName.set(
-      account.number,
-      account.displayName || 'Uncategorized Income',
-    );
-  });
-
-  // Step 4: Fetch and categorize revenue by account number from invoices and GL entries
-  const revenueCategories = new Map<string, number>();
-  for (const invoice of postedInvoices) {
-    const creditGLEntries = await this.dynamicsGlEntryService.getGLEntriesByDocumentNumber(invoice.number);
-    for (const glEntry of creditGLEntries) {
-      const accountNumber = glEntry.accountNumber;
-      const categoryName = accountNumberToDisplayName.get(accountNumber) || 'Uncategorized Income';
-      const currentAmount = revenueCategories.get(categoryName) || 0;
-      revenueCategories.set(categoryName, currentAmount + (glEntry.creditAmount || 0));
-    }
-  }
-
-  const totalNewInvoices = Array.from(revenueCategories.values()).reduce((sum, amount) => sum + amount, 0);
-
-  // Step 5: Fetch payments from the ledger (Customer Ledger Entries)
-  const paymentsFromLedger = await this.dynamicsPaymentService.getCustomerPaymentsFromLedger(startDate, endDate);
-  const totalPaymentsReceived = paymentsFromLedger.reduce((sum, payment) => sum + (payment.creditAmount || 0), 0);
-
-  // Step 6: Fetch TEM payments from GL entries
-  const TEMPayments = await this.dynamicsGlEntryService.getTEMPayments(startDate, endDate);
-  const totalTEMPayments = TEMPayments.reduce((sum, payment) => sum + (payment.creditAmount || 0), 0);
-
-  // Step 7: Group payments by customer and include payment details
-  const paymentsByCustomerMap = new Map<string, { amount: number; payments: any[] }>();
-
-  paymentsFromLedger.forEach((payment) => {
-    const customerName = payment.customerName || 'Unknown';
-    const amount = payment.creditAmount || 0;
-
-    if (!paymentsByCustomerMap.has(customerName)) {
-      paymentsByCustomerMap.set(customerName, { amount: 0, payments: [] });
-    }
-
-    const customerData = paymentsByCustomerMap.get(customerName);
-    customerData.amount += amount;
-    customerData.payments.push({
-      amount: amount,
-      postingDate: payment.postingDate,
-      documentNo: payment.documentNo,
-      description: payment.description,
-      // Include other fields as needed
+    // Step 3: Fetch income accounts and map account numbers to categories
+    const incomeAccounts = await this.dynamicsAccountService.getIncomeAccounts();
+    const accountNumberToDisplayName = new Map<string, string>();
+    incomeAccounts.forEach((account) => {
+      accountNumberToDisplayName.set(
+        account.number,
+        account.displayName || 'Uncategorized Income',
+      );
     });
-  });
 
-  // Step 8: Fetch total credits during the period
-  const totalCredits = await this.getTotalCredits(startDate, endDate);
+    // Step 4: Fetch and categorize revenue by account number from invoices and GL entries
+    const revenueCategories = new Map<string, number>();
+    for (const invoice of postedInvoices) {
+      const creditGLEntries = await this.dynamicsGlEntryService.getGLEntriesByDocumentNumber(invoice.number);
+      for (const glEntry of creditGLEntries) {
+        const accountNumber = glEntry.accountNumber;
+        const categoryName = accountNumberToDisplayName.get(accountNumber) || 'Uncategorized Income';
+        const currentAmount = revenueCategories.get(categoryName) || 0;
+        revenueCategories.set(categoryName, currentAmount + (glEntry.creditAmount || 0));
+      }
+    }
 
-  // Step 9: Convert Map to Array for paymentsByCustomer
-  const paymentsByCustomer = Array.from(paymentsByCustomerMap.entries()).map(([customer, data]) => ({
-    customer,
-    amount: data.amount,
-    payments: data.payments,
-  }));
+    const totalNewInvoices = Array.from(revenueCategories.values()).reduce((sum, amount) => sum + amount, 0);
 
-  // Step 10: Return the full inflows data
-  return {
-    startingReceivables,
-    endingReceivables,
-    netChangeReceivables,
-    totalNewInvoices,
-    totalCredits,
-    totalPaymentsReceived,
-    revenueCategories: Array.from(revenueCategories.entries()).map(([category, amount]) => ({
-      category,
-      amount,
-    })),
-    paymentsByCustomer,
-    // Optionally include totalTEMPayments if needed
-    // totalTEMPayments,
-  };
-}
+    // Step 5: Fetch payments from the ledger (Customer Ledger Entries)
+    const paymentsFromLedger = await this.dynamicsPaymentService.getCustomerPaymentsFromLedger(startDate, endDate);
+    const totalPaymentsReceived = paymentsFromLedger.reduce((sum, payment) => sum + (payment.creditAmount || 0), 0);
+
+    // Step 6: Fetch TEM payments from GL entries
+    const TEMPayments = await this.dynamicsGlEntryService.getTEMPayments(startDate, endDate);
+    const totalTEMPayments = TEMPayments.reduce((sum, payment) => sum + (payment.creditAmount || 0), 0);
+
+    // Step 7: Group payments by customer and include payment details
+    const paymentsByCustomerMap = new Map<string, { amount: number; payments: { amount: number; postingDate: string; documentNo: string; description: string }[] }>();
+
+    paymentsFromLedger.forEach((payment) => {
+      const customerName = payment.customerName || 'Unknown';
+      const amount = payment.creditAmount || 0;
+
+      if (!paymentsByCustomerMap.has(customerName)) {
+        paymentsByCustomerMap.set(customerName, { amount: 0, payments: [] });
+      }
+
+      const customerData = paymentsByCustomerMap.get(customerName);
+      customerData.amount += amount;
+      customerData.payments.push({
+        amount: amount,
+        postingDate: payment.postingDate.toISOString(), // Convert Date to string
+        documentNo: payment.documentNo,
+        description: payment.description,
+        // Include other fields as needed
+      });
+    });
+
+    // Step 8: Fetch total credits during the period
+    const totalCredits = await this.getTotalCredits(startDate, endDate);
+
+    // Step 9: Convert Map to Array for paymentsByCustomer
+    const paymentsByCustomer = Array.from(paymentsByCustomerMap.entries()).map(([customer, data]) => ({
+      customer,
+      amount: data.amount,
+      payments: data.payments,
+    }));
+
+// Step 10: Return the full inflows data
+return {
+  startingReceivables,
+  endingReceivables,
+  netChangeReceivables,
+  totalNewInvoices,
+  totalCredits,
+  totalPaymentsReceived,
+  revenueCategories: Array.from(revenueCategories.entries()).map(([category, amount]) => ({
+    category,
+    amount,
+  })),
+  paymentsByCustomer,
+  totalTEMPayments, // Include it here
+};
+  }
 
   /**
    * Retrieves the aging report using the agedAccountsReceivables endpoint.
@@ -173,45 +172,57 @@ async getInflowsData(startDate: string, endDate: string): Promise<{
 
       return agedReceivables;
     } catch (error) {
-    const err = error as any;
+      const err = error as Error;
       this.logger.error(`Error fetching aging report: ${err.message}`);
       throw new HttpException('Failed to fetch aging report', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
- /**
+  /**
    * Retrieves the payment history for a specific customer.
    * @param customerNumber - The customer number.
    * @param startDate - Start date in 'YYYY-MM-DD' format.
    * @param endDate - End date in 'YYYY-MM-DD' format.
    * @returns An array of payment history records.
    */
- async getCustomerPaymentHistory(
-  customerNumber: string,
-  startDate: string,
-  endDate: string
-): Promise<PaymentHistoryRecord[]> {
-  try {
-    // Validate date inputs
-    if (!startDate || !endDate) {
-      throw new Error('startDate and endDate are required parameters.');
+  async getCustomerPaymentHistory(
+    customerNumber: string,
+    startDate: string,
+    endDate: string
+  ): Promise<PaymentHistoryRecord[]> {
+    try {
+      // Validate date inputs
+      if (!startDate || !endDate) {
+        throw new Error('startDate and endDate are required parameters.');
+      }
+
+      // Fetch payment history using the method in DynamicsPaymentService
+      const paymentHistory = await this.dynamicsPaymentService.getCustomerPaymentsWithInvoices(
+        customerNumber,
+        startDate,
+        endDate
+      );
+
+      // Ensure paymentDate is converted to string
+      const formattedPaymentHistory: PaymentHistoryRecord[] = paymentHistory.map((payment) => ({
+        paymentDate: payment.paymentDate.toISOString(), // Convert Date to string
+        paymentAmount: payment.paymentAmount,
+        description: payment.description,
+        paymentEntryNo: payment.paymentEntryNo,
+        relatedInvoices: payment.relatedInvoices.map((invoice) => ({
+          invoiceNumber: invoice.invoiceNumber,
+          invoiceDate: invoice.invoiceDate.toISOString(), // Convert Date to string
+          amount: invoice.amount,
+        })),
+      }));
+
+      return formattedPaymentHistory;
+    } catch (error) {
+      const err = error as Error;
+      this.logger.error(`Error fetching payment history for customer ${customerNumber}: ${err.message}`);
+      throw new HttpException('Failed to fetch payment history', HttpStatus.INTERNAL_SERVER_ERROR);
     }
-
-    // Fetch payment history using the method in DynamicsPaymentService
-    const paymentHistory = await this.dynamicsPaymentService.getCustomerPaymentsWithInvoices(
-      customerNumber,
-      startDate,
-      endDate
-    );
-
-    return paymentHistory;
-  } catch (error) {
-    const err = error as any;
-    this.logger.error(`Error fetching payment history for customer ${customerNumber}: ${err.message}`);
-    throw new HttpException('Failed to fetch payment history', HttpStatus.INTERNAL_SERVER_ERROR);
   }
-}
-
 
   /**
    * Retrieves receivables for a specific date from the balance sheet report.
@@ -235,7 +246,7 @@ async getInflowsData(startDate: string, endDate: string): Promise<{
         return 0;
       }
     } catch (error) {
-    const err = error as any;
+      const err = error as Error;
       this.logger.error(`Error fetching receivables for date ${date}: ${err.message}`);
       throw error;
     }
@@ -256,7 +267,7 @@ async getInflowsData(startDate: string, endDate: string): Promise<{
       const invoiceLines = await this.dynamicsInvoiceService.getInvoiceLinesByInvoiceId(invoice.id);
       return { invoice, invoiceLines };
     } catch (error) {
-    const err = error as any;
+      const err = error as Error;
       this.logger.error(`Error fetching invoice details: ${err.message}`);
       throw error;
     }
@@ -281,33 +292,33 @@ async getInflowsData(startDate: string, endDate: string): Promise<{
   async getRevenueByCategory(startDate: string, endDate: string): Promise<{ totalRevenue: number; revenueByCategory: Record<string, number> }> {
     const revenue = await this.dynamicsInvoiceService.getRevenueByCategory(startDate, endDate);
     return revenue;  // Ensure you're returning the correct object
-}
+  }
 
-  async getInvoicesByNumbers(invoiceNumbers: string[]): Promise<any[]> {
+  async getInvoicesByNumbers(invoiceNumbers: string[]): Promise<Invoice[]> {
     // Implement logic to fetch invoices by their numbers
     return await this.dynamicsInvoiceService.getInvoicesByNumbers(invoiceNumbers);
   }
 
   /**
- * Retrieves the total credits (credit memos) during the specified date range.
- * @param startDate - The start date in 'YYYY-MM-DD' format.
- * @param endDate - The end date in 'YYYY-MM-DD' format.
- * @returns The total credits amount.
- */
-async getTotalCredits(startDate: string, endDate: string): Promise<number> {
-  this.logger.debug(`Fetching total credits from ${startDate} to ${endDate}`);
+   * Retrieves the total credits (credit memos) during the specified date range.
+   * @param startDate - The start date in 'YYYY-MM-DD' format.
+   * @param endDate - The end date in 'YYYY-MM-DD' format.
+   * @returns The total credits amount.
+   */
+  async getTotalCredits(startDate: string, endDate: string): Promise<number> {
+    this.logger.debug(`Fetching total credits from ${startDate} to ${endDate}`);
 
-  try {
-    const creditEntries = await this.dynamicsCreditService.getCreditMemos(startDate, endDate);
-    const totalCredits = creditEntries.reduce((sum, entry) => sum + (entry.debitAmount || 0), 0);
-    this.logger.debug(`Total credits calculated: ${totalCredits}`);
-    return totalCredits;
-  } catch (error) {
-    const err = error as any;
-    this.logger.error(`Error fetching total credits: ${err.message}`);
-    throw new HttpException('Failed to fetch total credits', HttpStatus.INTERNAL_SERVER_ERROR);
+    try {
+      const creditEntries = await this.dynamicsCreditService.getCreditMemos(startDate, endDate);
+      const totalCredits = creditEntries.reduce((sum, entry) => sum + (entry.debitAmount || 0), 0);
+      this.logger.debug(`Total credits calculated: ${totalCredits}`);
+      return totalCredits;
+    } catch (error) {
+      const err = error as Error;
+      this.logger.error(`Error fetching total credits: ${err.message}`);
+      throw new HttpException('Failed to fetch total credits', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
-}
 
   /**
    * Retrieves the financial details for a specific customer.
@@ -323,13 +334,12 @@ async getTotalCredits(startDate: string, endDate: string): Promise<number> {
       }
   
       // Fetch financial details using the customer ID
-      const financialDetails = await this.dynamicsCustomerService.getCustomerFinancialDetails(customer.id);
+      const financialDetails = await this.dynamicsCustomerService.getCustomerFinancialDetails(customer.id as string);
       this.logger.debug(`Retrieved financial details for customer ${customerNumber}: ${JSON.stringify(financialDetails)}`);
       return financialDetails;
     } catch (error) {
-      this.logger.error(`Error fetching financial details for customer ${customerNumber}: ${error.message}`);
+      this.logger.error(`Error fetching financial details for customer ${customerNumber}: ${(error as Error).message}`);
       throw new HttpException('Failed to fetch customer financial details', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }
-

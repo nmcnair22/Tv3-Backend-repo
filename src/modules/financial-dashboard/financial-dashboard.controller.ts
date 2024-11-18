@@ -25,7 +25,7 @@ export class FinancialDashboardController {
     try {
       return await this.financialDashboardService.getInflowsData(startDate, endDate);
     } catch (error) {
-    const err = error as any;
+    const err = error as Error;
       this.logger.error(`Error fetching inflows data: ${err.message}`);
       throw new HttpException('Failed to fetch inflows data', HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -44,7 +44,7 @@ export class FinancialDashboardController {
     try {
       return await this.financialDashboardService.getAgingReport(asOfDate);
     } catch (error) {
-    const err = error as any;
+    const err = error as Error;
       this.logger.error(`Error fetching aging report: ${err.message}`);
       throw new HttpException('Failed to fetch aging report', HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -58,7 +58,7 @@ export class FinancialDashboardController {
     try {
       return await this.financialDashboardService.getCustomerPaymentsFromLedger(customerNumber, endDate);
     } catch (error) {
-    const err = error as any;
+    const err = error as Error;
       this.logger.error(`Error fetching customer payments: ${err.message}`);
       throw new HttpException('Failed to fetch customer payments', HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -69,7 +69,7 @@ export class FinancialDashboardController {
     try {
       return await this.financialDashboardService.getInvoiceDetails(invoiceNumber);
     } catch (error) {
-    const err = error as any;
+    const err = error as Error;
       this.logger.error(`Error fetching invoice details: ${err.message}`);
       throw new HttpException('Failed to fetch invoice details', HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -82,7 +82,7 @@ export class FinancialDashboardController {
       const averageDSO = dsoMetrics.length > 0 ? dsoMetrics.reduce((sum, metric) => sum + metric.daysOutstanding, 0) / dsoMetrics.length : 0;
       return { dso: averageDSO };
     } catch (error) {
-    const err = error as any;
+    const err = error as Error;
       this.logger.error(`Error fetching DSO: ${err.message}`);
       throw new HttpException('Failed to fetch DSO', HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -93,7 +93,7 @@ export class FinancialDashboardController {
     try {
       return await this.financialDashboardService.getInvoicesByNumbers(invoiceNumbers);
     } catch (error) {
-    const err = error as any;
+    const err = error as Error;
       this.logger.error(`Error fetching bulk invoice details: ${err.message}`);
       throw new HttpException('Failed to fetch invoice details', HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -115,7 +115,7 @@ export class FinancialDashboardController {
       const data = await this.financialDashboardService.getCustomerPaymentsFromLedger(startDate, endDate);
       return data;
     } catch (error) {
-    const err = error as any;
+    const err = error as Error;
       this.logger.error(`Error fetching payments: ${err.message}`);
       throw new HttpException(
         'Failed to fetch payments',

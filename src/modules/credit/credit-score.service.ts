@@ -5,11 +5,11 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { addMonths, format, subDays, subMonths, subWeeks } from 'date-fns';
 import {
-    Between,
-    In,
-    LessThanOrEqual,
-    MoreThan,
-    Repository,
+  Between,
+  In,
+  LessThanOrEqual,
+  MoreThan,
+  Repository,
 } from 'typeorm';
 import { CreditScoreHistory } from '../sync/entities/credit-score-history.entity';
 import { CustomerLedgerEntry } from '../sync/entities/customer-ledger-entry.entity';
@@ -148,7 +148,7 @@ export class CreditScoreService {
    * @param endDate - The end date in 'YYYY-MM-DD' format.
    * @returns An object mapping months to spend amounts.
    */
-    async getSpendTrendData(customerNumber: string, startDate: string, endDate: string): Promise<any> {
+    async getSpendTrendData(customerNumber: string, startDate: string, endDate: string): Promise<{ [month: string]: number }> {
         this.logger.debug(`Fetching spend trend data for customer ${customerNumber}`);
         const invoices = await this.salesInvoiceRepository.find({
           where: {
@@ -157,7 +157,7 @@ export class CreditScoreService {
           },
         });
       
-        const spendTrend = {};
+        const spendTrend: { [key: string]: number } = {};
       
         invoices.forEach((invoice) => {
           const month = format(invoice.invoiceDate, 'yyyy-MM');
@@ -178,7 +178,7 @@ export class CreditScoreService {
        * @param endDate - The end date in 'YYYY-MM-DD' format.
        * @returns An array of categories with total spend amounts.
        */
-      async getSpendByCategory(customerNumber: string, startDate: string, endDate: string): Promise<any> {
+      async getSpendByCategory(customerNumber: string, startDate: string, endDate: string): Promise<{ category: string; totalAmount: number }[]> {
         this.logger.debug(`Fetching spend by category for customer ${customerNumber}`);
         const invoiceLines = await this.salesInvoiceLineRepository
           .createQueryBuilder('line')
@@ -256,7 +256,21 @@ export class CreditScoreService {
    * @param asOfDate - Optional date up to which to consider data.
    * @returns The credit score and contributing factors.
    */
-  async calculateCreditScore(customerNumber: string, asOfDate?: Date): Promise<any> {
+  async calculateCreditScore(customerNumber: string, asOfDate?: Date): Promise<{
+    customerNumber: string;
+    creditScore: number;
+    creditTier: string;
+    spendTier: SpendTier;
+    averageMonthlySpend: number;
+    factors: {
+      totalPurchaseAmount: number;
+      PAF: number;
+      totalTimelinessPoints: number;
+      PTF: number;
+      outstandingBalance: number;
+      OBF: number;
+    };
+  }> {
     const loggerContext = 'calculateCreditScore';
     this.logger.debug(`Calculating credit score for customer ${customerNumber}`, loggerContext);
 
@@ -717,7 +731,7 @@ export class CreditScoreService {
     startDate: string,
     endDate: string,
     interval: 'monthly' | 'weekly' | 'daily' = 'monthly',
-  ): Promise<any[]> {
+  ): Promise<{ date: string; creditScore: number }[]> {
     const loggerContext = 'getCreditScoreHistory';
     this.logger.debug(`Fetching credit score history for customer ${customerNumber}`, loggerContext);
 

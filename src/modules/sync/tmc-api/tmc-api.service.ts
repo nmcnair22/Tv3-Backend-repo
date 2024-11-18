@@ -7,6 +7,10 @@ import { AxiosRequestConfig } from 'axios';
 import axiosRetry from 'axios-retry';
 import { firstValueFrom } from 'rxjs';
 import { DynamicsAuthService } from '../../dynamics/dynamics-auth.service';
+import { BillingScheduleLineData } from '../dto/billing-schedule-line-data.dto';
+import { JobData } from '../dto/job-data.dto';
+import { ShipToAddressData } from '../dto/ship-to-address-data.dto';
+import { TmcCustomerLedgerEntryData } from '../dto/tmc-customer-ledger-entry-data.dto';
 
 @Injectable()
 export class TmcApiService {
@@ -45,21 +49,21 @@ export class TmcApiService {
   /**
    * Make a GET request to the specified URL with authentication and optional query parameters.
    */
-  private async getRequest(url: string, params?: Record<string, any>): Promise<any[]> {
+  private async getRequest(url: string, params?: Record<string, string | number | boolean>): Promise<unknown[]> {
     const headers = await this.dynamicsAuthService.getHeaders();
     let config: AxiosRequestConfig = {
       headers,
       params,
     };
-  
-    let allData = [];
+
+    let allData: unknown[] = [];
     let nextUrl: string | undefined = url;
-  
+
     try {
       do {
         this.logger.debug(`Requesting URL: ${nextUrl}`);
         const response = await firstValueFrom(this.httpService.get(nextUrl, config));
-  
+
         // Append data
         if (response.data.value) {
           allData = allData.concat(response.data.value);
@@ -67,24 +71,24 @@ export class TmcApiService {
           // In case the response data is an object, not wrapped in 'value'
           allData.push(response.data);
         }
-  
+
         // Check for nextLink
         nextUrl = response.data['@odata.nextLink'];
-  
+
         // After the first request, refresh headers and retain params
         config = {
           headers: await this.dynamicsAuthService.getHeaders(), // Refresh headers
           params,
         };
-  
+
         // Log the number of records fetched so far
         this.logger.debug(`Fetched ${allData.length} records from ${url}`);
-  
+
       } while (nextUrl);
-  
+
       return allData;
     } catch (error) {
-      const err = error as any;
+      const err = error as { response?: { status: number; statusText: string; data: Record<string, unknown>; headers: Record<string, string> }; request?: unknown; message: string; config?: { url?: string } };
 
       // Handle specific HTTP errors
       if (err.response) {
@@ -120,48 +124,56 @@ export class TmcApiService {
    * Fetch customer ledger entries from the TMC API.
    * @param lastSyncDateTime The timestamp of the last successful synchronization.
    */
-  async getCustomerLedgerEntries(lastSyncDateTime?: Date): Promise<any[]> {
+  async getCustomerLedgerEntries(lastSyncDateTime?: Date): Promise<TmcCustomerLedgerEntryData[]> {
     const url = `${this.baseUrl()}/CustLedgerEntries`;
-    const params: any = {};
+    const params: Record<string, string> = {};
     if (lastSyncDateTime) {
       params['$filter'] = `lastModifiedDateTime gt ${lastSyncDateTime.toISOString()}`;
     }
 
-    return await this.getRequest(url, params);
+    // Cast the response to TmcCustomerLedgerEntryData[]
+    return await this.getRequest(url, params) as TmcCustomerLedgerEntryData[];
   }
 
-  /**
-   * Fetch ship-to addresses from the TMC API with optional last sync date for incremental sync.
-   */
-  async getShipToAddresses(lastSyncDateTime?: Date): Promise<any[]> {
-    const url = `${this.baseUrl()}/shipToAddresses`;
-    const params: any = {};
-    if (lastSyncDateTime) {
-      params['$filter'] = `lastModifiedDateTime gt ${lastSyncDateTime.toISOString()}`;
-    }
-    return await this.getRequest(url, params);
+/**
+ * Fetch ship-to addresses from the TMC API with optional last sync date for incremental sync.
+ */
+async getShipToAddresses(lastSyncDateTime?: Date): Promise<ShipToAddressData[]> {
+  const url = `${this.baseUrl()}/shipToAddresses`;
+  const params: Record<string, string> = {};
+  if (lastSyncDateTime) {
+    params['$filter'] = `lastModifiedDateTime gt ${lastSyncDateTime.toISOString()}`;
   }
 
-  /**
-   * Fetch jobs from the TMC API with optional last sync date for incremental sync.
-   */
-  async getJobs(lastSyncDateTime?: Date): Promise<any[]> {
-    const url = `${this.baseUrl()}/jobs`;
-    const params: any = {};
-    if (lastSyncDateTime) {
-      params['$filter'] = `lastModifiedDateTime gt ${lastSyncDateTime.toISOString()}`;
-    }
-    return await this.getRequest(url, params);
+  const response = await this.getRequest(url, params);
+
+  // Cast each record in the response to ShipToAddressData
+  return response.map((data) => data as ShipToAddressData);
+}
+
+/**
+ * Fetch jobs from the TMC API with optional last sync date for incremental sync.
+ */
+async getJobs(lastSyncDateTime?: Date): Promise<JobData[]> {
+  const url = `${this.baseUrl()}/jobs`;
+  const params: Record<string, string> = {};
+  if (lastSyncDateTime) {
+    params['$filter'] = `lastModifiedDateTime gt ${lastSyncDateTime.toISOString()}`;
   }
+  const response = await this.getRequest(url, params);
+  
+  return response.map((data) => data as JobData);
+}
 
   /**
    * Fetch billing schedule lines from the TMC API.
    * Since there is no lastModifiedDateTime, we fetch all records.
    */
-  async getBillingScheduleLines(): Promise<any[]> {
+  async getBillingScheduleLines(): Promise<BillingScheduleLineData[]> {
     const url = `${this.baseUrl()}/bssiArcbBillingScheduleLines`;
-    const params: any = {};
-    // No $filter needed since lastModifiedDateTime doesn't exist
-    return await this.getRequest(url, params);
+    const params: Record<string, string> = {};
+    const response = await this.getRequest(url, params);
+  
+    return response.map((data) => data as BillingScheduleLineData);
   }
 }

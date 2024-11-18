@@ -20,7 +20,7 @@ export class CashFlowController {
       }
       return await this.cashFlowService.getCashFlowStatements(startDate, endDate);
     } catch (error) {
-    const err = error as any;
+    const err = error as { status?: number };
       this.logger.error('Error fetching cash flow statements', error);
       throw new HttpException(
         'Error fetching cash flow statements',

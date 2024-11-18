@@ -131,7 +131,7 @@ export class PaymentHistoryService {
 
         return flattenedPaymentHistory;
     } catch (error) {
-        const err = error as any;
+        const err = error as Error;
         this.logger.error(`Error fetching payment history for ${customerNumber}:`, err.message);
         throw new Error('Failed to fetch payment history.');
     }

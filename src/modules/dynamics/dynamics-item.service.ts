@@ -44,7 +44,7 @@ export class DynamicsItemService extends DynamicsBaseService {
       this.logger.debug(`Fetched ${items.length} items successfully`);
       return items;
     } catch (error) {
-    const err = error as any;
+    const err = error as { response?: { data?: Record<string, unknown>; status?: number } };
       this.logger.error('Failed to fetch items', error);
       if (err.response) {
         this.logger.error(`Error response data: ${JSON.stringify(err.response.data)}`);

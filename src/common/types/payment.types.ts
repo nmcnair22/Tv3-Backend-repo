@@ -1,4 +1,6 @@
 // Payment from Customer Ledger
+
+// Payment from Customer Ledger
 export interface PaymentCustomerLedger {
   entryNo: number;
   customerName: string;
@@ -8,14 +10,14 @@ export interface PaymentCustomerLedger {
   description: string;
   documentNo: string;
   documentType: string;
-  dueDate: Date; // Changed from string to Date
-  postingDate: string; // Keep as string or change to Date based on your needs
+  dueDate: Date; // Changed to Date for date consistency
+  postingDate: Date; // Changed to Date for consistency
   sourceCode: string;
   transactionNo: number;
-  paymentType?: string; // Added for backward compatibility
-  depositEntryNo?: string; // Added for backward compatibility
-  createdAt?: Date; // Added to align with CustomerLedgerEntry
-  updatedAt?: Date; // Added to align with CustomerLedgerEntry
+  paymentType?: string; // Optional for backward compatibility
+  depositEntryNo?: string; // Optional for backward compatibility
+  createdAt?: Date; // Timestamps for alignment with CustomerLedgerEntry
+  updatedAt?: Date; // Timestamps for alignment with CustomerLedgerEntry
 }
 
 // Invoice details
@@ -26,21 +28,23 @@ export interface Invoice {
   customerNo: string;
   debitAmount: number;
   description: string;
-  documentDate: string;
-  dueDate: string;
+  documentDate: Date; // Changed to Date for consistency
+  dueDate: Date; // Changed to Date for consistency
   documentNo: string;
   documentType: string;
   prepayment: boolean;
 }
 
+// Days Sales Outstanding Metric
 export interface DSOMetric {
   invoiceNumber: string;
   customerName: string;
-  invoiceDate: string;
-  paymentDate: string;
+  invoiceDate: Date; // Changed to Date for consistency
+  paymentDate: Date; // Changed to Date for consistency
   daysOutstanding: number;
 }
 
+// Payment Types
 export type Payment = PaymentGL | PaymentCustomerLedger;
 
 // Payment from General Ledger
@@ -54,16 +58,41 @@ export interface PaymentGL {
   documentNo: string;
   documentNumber: string; // Specific to G/L
   documentType: string;
-  dueDate: string;
-  postingDate: string;
+  dueDate: Date; // Changed to Date for consistency
+  postingDate: Date; // Changed to Date for consistency
   sourceCode: string;
   transactionNo: string;
-  itemNumber?: string;
-  totalAmount?: number;
+  itemNumber?: string; // Optional for specific G/L entries
+  totalAmount?: number; // Optional for specific G/L entries
   paymentType: 'GL'; // Discriminator for G/L payment
 }
 
+// Per Customer Days Sales Outstanding Metric
 export interface PerCustomerDSOMetric {
   customerName: string;
   averageDSO: number;
+}
+
+// Payment History Record for Customer Ledger
+export interface PaymentHistoryRecord {
+  entryNo: number;
+  customerName: string;
+  amount: number;
+  creditAmount: number;
+  debitAmount: number;
+  documentDate: string;
+  documentType: string;
+  documentNo: string;
+  postingDate: string;
+  dueDate: string;
+  remainingAmount: number;
+  currencyCode: string;
+  description: string;
+  sourceCode: string;
+  transactionNo: string;
+  relatedInvoices: {
+    invoiceNumber: string;
+    invoiceDate: string;
+    amount: number;
+  }[];
 }

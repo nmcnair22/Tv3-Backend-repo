@@ -22,7 +22,7 @@ export class SyncController {
       await this.syncService.syncAll();
       return { message: 'Synchronization completed successfully' };
     } catch (error) {
-    const err = error as any;
+    const err = error as Error;
       this.logger.error('Manual synchronization failed', err.stack);
       return { message: 'Synchronization failed', error: err.message };
     }

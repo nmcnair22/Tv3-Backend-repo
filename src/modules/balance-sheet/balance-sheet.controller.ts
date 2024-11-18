@@ -17,7 +17,7 @@ export class BalanceSheetController {
       }
       return await this.balanceSheetService.getBalanceSheet(date);
     } catch (error) {
-    const err = error as any;
+    const err = error as { status?: number };
       this.logger.error('Error fetching balance sheet', error);
       throw new HttpException(
         'Error fetching balance sheet',

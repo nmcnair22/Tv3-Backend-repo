@@ -9,7 +9,7 @@ export class DynamicsAccountService extends DynamicsBaseService {
   protected readonly logger = new Logger(DynamicsAccountService.name);
 
   // Fetch income accounts
-  async getIncomeAccounts(): Promise<any[]> {
+  async getIncomeAccounts(): Promise<{ id: string; number: string; displayName: string; category: string; subCategory: string }[]> {
     this.logger.debug('Fetching income accounts');
     const url = `${this.standardApiUrl}/accounts`;
 
@@ -29,7 +29,7 @@ export class DynamicsAccountService extends DynamicsBaseService {
       this.logger.debug(`Fetched ${accounts.length} income accounts`);
       return accounts;
     } catch (error) {
-    const err = error as any;
+    const err = error as { response?: { data?: Record<string, unknown>; status?: number } };
       this.logger.error('Failed to fetch income accounts', error);
       if (err.response) {
         this.logger.error(
@@ -58,13 +58,12 @@ export class DynamicsAccountService extends DynamicsBaseService {
       this.logger.debug(`Fetched ${incomeAccounts.length} income accounts`);
 
       const accountToCategoryMap: Record<string, string> = {};
-      incomeAccounts.forEach((account) => {
+      incomeAccounts.forEach((account: { number: string; subCategory: string }) => {
         accountToCategoryMap[account.number] = account.subCategory || 'Uncategorized Income';
       });
 
       return accountToCategoryMap;
     } catch (error) {
-    const err = error as any;
       this.logger.error('Failed to fetch income accounts', error);
       throw new HttpException('Failed to fetch income accounts', HttpStatus.INTERNAL_SERVER_ERROR);
     }
