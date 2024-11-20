@@ -9,7 +9,7 @@ export class AzureInvoiceItem {
   id: number;
 
   @Column()
-  azureBillId: number;
+  azureBillId: string; // Ensure this matches AzureBill's ID type (uuid)
 
   @Column({ type: 'text', nullable: true })
   description: string;

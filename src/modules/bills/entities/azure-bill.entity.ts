@@ -1,19 +1,28 @@
 // src/modules/bills/entities/azure-bill.entity.ts
 
-import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
-import { AzureInvoiceItem } from './azure-invoice-item.entity';
+import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, Unique } from 'typeorm';
 
-@Entity('azure_bills')
+@Entity()
+@Unique(['fingerprint'])
 export class AzureBill {
-  @PrimaryGeneratedColumn()
-  id: number;
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
-  // Define other columns
-  @Column({ nullable: true })
-  vendorName: string;
+  @Column()
+  billType: string; // SLB or MLB
 
-  // ... other columns
+  @Column('text')
+  fieldValues: string; // JSON string of ExtractedData
 
-  @OneToMany(() => AzureInvoiceItem, (invoiceItem) => invoiceItem.azureBill)
-  invoiceItems: AzureInvoiceItem[];
+  @Column('text', { nullable: true })
+  validationResult?: string; // JSON string
+
+  @Column('text', { nullable: true })
+  fileName: string;
+
+  @Column({ unique: true })
+  fingerprint: string;
+
+  @CreateDateColumn()
+  processedAt: Date;
 }

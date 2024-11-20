@@ -1,253 +1,273 @@
 // src/modules/bills/services/analyze.service.ts
 
-import {
-  AnalyzedDocument,
-  DocumentAnalysisClient,
-  DocumentField,
-} from '@azure/ai-form-recognizer';
-import { AzureKeyCredential } from '@azure/core-auth';
+import DocumentIntelligence, {
+  AnalyzeResultOperationOutput,
+  getLongRunningPoller,
+  isUnexpected,
+} from '@azure-rest/ai-document-intelligence';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
 import * as fs from 'fs';
-import {
-  ExtractedData,
-  Instalment,
-  Item,
-  PaymentDetail,
-  TaxDetail,
-} from '../interfaces/extracted-data.interface'; // <-- Correct Import
+import { Repository } from 'typeorm';
+import { ProcessingInvoiceLineItem } from '../entities/processing-invoice-line-item.entity';
+import { ProcessingInvoice } from '../entities/processing-invoice.entity';
 
 @Injectable()
 export class AnalyzeService {
   private readonly logger = new Logger(AnalyzeService.name);
-  private client: DocumentAnalysisClient;
+  private client;
 
-  constructor(private configService: ConfigService) {
+  constructor(
+    private configService: ConfigService,
+    @InjectRepository(ProcessingInvoice)
+    private invoiceRepository: Repository<ProcessingInvoice>,
+    @InjectRepository(ProcessingInvoiceLineItem)
+    private lineItemRepository: Repository<ProcessingInvoiceLineItem>,
+  ) {
     const key = this.configService.get<string>('AZURE_FORM_RECOGNIZER_KEY');
     const endpoint = this.configService.get<string>(
       'AZURE_FORM_RECOGNIZER_ENDPOINT',
     );
-    this.client = new DocumentAnalysisClient(
-      endpoint,
-      new AzureKeyCredential(key),
-    );
+
+    if (!key || !endpoint) {
+      this.logger.error('Azure Document Intelligence credentials are not set.');
+      throw new Error('Azure Document Intelligence credentials are not set.');
+    }
+
+    // Initialize the client
+    this.client = DocumentIntelligence(endpoint, { key });
   }
 
-  async analyzeWithAzure(filePath: string): Promise<ExtractedData> {
+  /**
+   * Analyzes a bill using Azure Document Intelligence.
+   * @param filePath - The path to the uploaded PDF file.
+   * @returns All extracted data from the bill.
+   */
+  async analyzeWithAzure(filePath: string): Promise<any> {
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+
+    this.logger.log(`Starting Azure analysis for file: ${filePath}`);
+
     try {
-      // Ensure the file exists
-      if (!fs.existsSync(filePath)) {
-        throw new Error(`File not found: ${filePath}`);
+      const fileContent = fs.readFileSync(filePath);
+
+      const initialResponse = await this.client
+        .path('/documentModels/{modelId}:analyze', 'prebuilt-invoice')
+        .post({
+          contentType: 'application/pdf',
+          body: fileContent,
+        });
+
+      if (isUnexpected(initialResponse)) {
+        throw initialResponse.body.error;
       }
 
-      const readStream = fs.createReadStream(filePath);
-      this.logger.log(`Starting Azure analysis for file: ${filePath}`);
+      const poller = await getLongRunningPoller(this.client, initialResponse);
+      const response = await poller.pollUntilDone();
 
-      // Analyze using the prebuilt-invoice model
-      const poller = await this.client.beginAnalyzeDocument(
-        'prebuilt-invoice',
-        readStream,
-      );
-
-      const result = await poller.pollUntilDone();
-
-      if (!result.documents || result.documents.length === 0) {
-        throw new Error('Failed to extract data from the invoice.');
+      if (isUnexpected(response)) {
+        throw response.body.error;
       }
 
-      const invoice = result.documents[0];
+      const result = response.body as AnalyzeResultOperationOutput;
+      const analyzeResult = result.analyzeResult;
 
-      const extractedData = this.extractFields(invoice);
+      if (!analyzeResult) {
+        throw new Error('Failed to analyze the invoice.');
+      }
+
+      const documents = analyzeResult.documents;
+
+      const document = documents && documents[0];
+      if (!document) {
+        throw new Error('Expected at least one document in the result.');
+      }
+
+      // Extract all fields dynamically
+      const extractedData = this.extractFields(document);
       this.logger.log(
         `Extracted data: ${JSON.stringify(extractedData, null, 2)}`,
       );
 
+      // Save the extracted data to the database
+      await this.saveExtractedData(extractedData);
+
       return extractedData;
-    } catch (error: unknown) {
-      if (error instanceof Error) {
-        this.logger.error(`Azure analysis error: ${error.message}`);
-      } else {
-        this.logger.error('Azure analysis error: Unknown error');
-      }
+    } catch (error) {
+      this.logger.error(`Azure analysis error: ${(error as Error).message}`);
       throw error;
     }
   }
 
-  private extractFields(invoice: AnalyzedDocument): ExtractedData {
-    const fields = invoice.fields;
+  /**
+   * Dynamically extracts all fields from the analyzed document.
+   * @param document - The analyzed document.
+   * @returns An object containing all extracted fields.
+   */
+  private extractFields(document: any): any {
+    const fields = document.fields;
 
-    // Helper functions to extract field content safely
-    const getStringField = (fieldName: string): string | null => {
-      const field = fields[fieldName];
-      if (field && field.kind === 'string' && field.value) {
-        return field.value as string;
-      }
-      return null;
-    };
+    const extractFieldValue = (field: any): any => {
+      if (!field) return null;
 
-
-    const getCurrencyField = (fieldName: string): number | null => {
-      const field = fields[fieldName];
-      if (field && field.kind === 'currency' && field.value) {
-        return (field.value as { amount: number }).amount; // Adjust based on actual type
-      }
-      return null;
-    };
-
-    const getDateField = (fieldName: string): string | null => {
-      const field = fields[fieldName];
-      if (field && field.kind === 'date' && field.value) {
-        return (field.value as Date).toISOString();
-      }
-      return null;
-    };
-
-    const getAddressField = (fieldName: string): Record<string, unknown> | null => {
-      const field = fields[fieldName];
-      if (field && field.kind === 'address' && field.value) {
-        return field.value as Record<string, unknown>;
-      }
-      return null;
-    };
-
-    // Extract top-level fields
-    const extractedData: ExtractedData = {
-      VendorName: getStringField('VendorName'),
-      VendorAddress: getAddressField('VendorAddress'),
-      VendorAddressRecipient: getStringField('VendorAddressRecipient'),
-      VendorTaxId: getStringField('VendorTaxId'),
-      CustomerName: getStringField('CustomerName'),
-      CustomerId: getStringField('CustomerId'),
-      CustomerAddress: getAddressField('CustomerAddress'),
-      CustomerAddressRecipient: getStringField('CustomerAddressRecipient'),
-      CustomerTaxId: getStringField('CustomerTaxId'),
-      BillingAddress: getAddressField('BillingAddress'),
-      BillingAddressRecipient: getStringField('BillingAddressRecipient'),
-      ShippingAddress: getAddressField('ShippingAddress'),
-      ShippingAddressRecipient: getStringField('ShippingAddressRecipient'),
-      InvoiceId: getStringField('InvoiceId'),
-      InvoiceDate: getDateField('InvoiceDate'),
-      DueDate: getDateField('DueDate'),
-      PurchaseOrder: getStringField('PurchaseOrder'),
-      SubTotal: getCurrencyField('SubTotal'),
-      TotalTax: getCurrencyField('TotalTax'),
-      TotalDiscount: getCurrencyField('TotalDiscount'),
-      InvoiceTotal: getCurrencyField('InvoiceTotal'),
-      AmountDue: getCurrencyField('AmountDue'),
-      PreviousUnpaidBalance: getCurrencyField('PreviousUnpaidBalance'),
-      PaymentTerm: getStringField('PaymentTerm'),
-      RemittanceAddress: getAddressField('RemittanceAddress'),
-      RemittanceAddressRecipient: getStringField('RemittanceAddressRecipient'),
-      ServiceAddress: getAddressField('ServiceAddress'),
-      ServiceAddressRecipient: getStringField('ServiceAddressRecipient'),
-      ServiceStartDate: getDateField('ServiceStartDate'),
-      ServiceEndDate: getDateField('ServiceEndDate'),
-      KVKNumber: getStringField('KVKNumber'),
-      PaymentDetails: this.extractArrayField<PaymentDetail>(fields, 'PaymentDetails'),
-      TaxDetails: this.extractArrayField<TaxDetail>(fields, 'TaxDetails'),
-      PaidInFourInstalments: this.extractArrayField<Instalment>(fields, 'PaidInFourInstalments'),
-      Items: [], // Initialize Items as an empty array
-    };
-
-    // Extract line items
-    const itemsField = fields['Items'];
-    if (itemsField && itemsField.kind === 'array' && itemsField.values) {
-      extractedData.Items = itemsField.values.map((item) => {
-        if (item.kind !== 'object' || !item.properties) {
-          return null;
-        }
-        const itemFields = item.properties;
-
-        const getItemStringField = (fieldName: string): string | null => {
-          const field = itemFields[fieldName];
-          if (field && field.kind === 'string' && field.value) {
-            return field.value as string;
+      switch (field.kind || field.type) {
+        case 'string':
+          return field.valueString || field.content || null;
+        case 'number':
+          return field.valueNumber ?? null;
+        case 'integer':
+          return field.valueInteger ?? null;
+        case 'double':
+          return field.valueNumber ?? null;
+        case 'date':
+          return field.valueDate ?? null;
+        case 'time':
+          return field.valueTime ?? null;
+        case 'phoneNumber':
+          return field.valuePhoneNumber ?? null;
+        case 'currency':
+          return field.valueCurrency?.amount ?? null;
+        case 'address':
+          return field.valueAddress || field.content || null;
+        case 'array':
+          if (field.valueArray) {
+            return field.valueArray.map((itemField: any) =>
+              extractFieldValue(itemField),
+            );
+          } else {
+            return null;
           }
-          return null;
-        };
-
-        const getItemNumberField = (fieldName: string): number | null => {
-          const field = itemFields[fieldName];
-          if (
-            field &&
-            (field.kind === 'number' || field.kind === 'integer') &&
-            field.value !== undefined
-          ) {
-            return field.value as number;
+        case 'object':
+          if (field.valueObject) {
+            const obj: any = {};
+            for (const key in field.valueObject) {
+              obj[key] = extractFieldValue(field.valueObject[key]);
+            }
+            return obj;
+          } else {
+            return null;
           }
+        default:
           return null;
-        };
+      }
+    };
 
-        const getItemCurrencyField = (fieldName: string): number | null => {
-          const field = itemFields[fieldName];
-          if (field && field.kind === 'currency' && field.value) {
-            return (field.value as { amount: number }).amount; // Adjust based on actual type
-          }
-          return null;
-        };
-
-        const getItemDateField = (fieldName: string): string | null => {
-          const field = itemFields[fieldName];
-          if (field && field.kind === 'date' && field.value) {
-            return (field.value as Date).toISOString();
-          }
-          return null;
-        };
-
-        return {
-          Description: getItemStringField('Description'),
-          Quantity: getItemNumberField('Quantity'),
-          UnitPrice: getItemCurrencyField('UnitPrice'),
-          Amount: getItemCurrencyField('Amount'),
-          ProductCode: getItemStringField('ProductCode'),
-          Date: getItemDateField('Date'),
-          Tax: getItemCurrencyField('Tax'),
-          TaxRate: getItemStringField('TaxRate'),
-          Unit: getItemStringField('Unit'),
-          Discount: getItemCurrencyField('Discount'),
-        } as Item;
-      }).filter(item => item !== null) as Item[];
+    const extractedData: any = {};
+    for (const fieldName in fields) {
+      extractedData[fieldName] = extractFieldValue(fields[fieldName]);
     }
 
     return extractedData;
   }
 
-  // Generic helper method to extract array fields with strong typing
-  private extractArrayField<T>(fields: Record<string, DocumentField>, fieldName: string): T[] | null {
-    const field = fields[fieldName];
-    if (field && field.kind === 'array' && field.values) {
-      return field.values.map((item) => {
-        if (item.kind !== 'object' || !item.properties) {
-          return null;
-        }
-        const itemFields = item.properties;
+  /**
+   * Saves the extracted data to the database.
+   * @param extractedData - The data extracted from the invoice.
+   */
+  private async saveExtractedData(extractedData: any) {
+    // Map extracted data to invoice entity
+    const invoice = new ProcessingInvoice();
+    invoice.invoice_id = extractedData.InvoiceId || null;
+    invoice.invoice_date = extractedData.InvoiceDate || null;
+    invoice.due_date = extractedData.DueDate || null;
+    invoice.vendor_name = extractedData.VendorName || null;
+    invoice.vendor_address = extractedData.VendorAddress || null;
+    invoice.vendor_address_recipient =
+      extractedData.VendorAddressRecipient || null;
+    invoice.customer_name = extractedData.CustomerName || null;
+    invoice.customer_id = extractedData.CustomerId || null;
+    invoice.customer_address = extractedData.CustomerAddress || null;
+    invoice.customer_address_recipient =
+      extractedData.CustomerAddressRecipient || null;
+    invoice.purchase_order = extractedData.PurchaseOrder || null;
+    invoice.payment_term = extractedData.PaymentTerm || null;
+    invoice.vendor_tax_id = extractedData.VendorTaxId || null;
+    invoice.customer_tax_id = extractedData.CustomerTaxId || null;
+    invoice.subtotal = extractedData.SubTotal || null;
+    invoice.total_tax = extractedData.TotalTax || null;
+    invoice.total_discount = extractedData.TotalDiscount || null;
+    invoice.invoice_total = extractedData.InvoiceTotal || null;
+    invoice.amount_due = extractedData.AmountDue || null;
+    invoice.previous_unpaid_balance =
+      extractedData.PreviousUnpaidBalance || null;
+    invoice.remittance_address = extractedData.RemittanceAddress || null;
+    invoice.remittance_address_recipient =
+      extractedData.RemittanceAddressRecipient || null;
+    invoice.service_start_date = extractedData.ServiceStartDate || null;
+    invoice.service_end_date = extractedData.ServiceEndDate || null;
 
-        const result: Record<string, unknown> = {};
-        for (const [key, value] of Object.entries(itemFields)) {
-          const typedValue = value as DocumentField; // Cast to DocumentField
-          if (typedValue.kind === 'string' && typedValue.value) {
-            result[key] = typedValue.value as string;
-          } else if (
-            (typedValue.kind === 'number' || typedValue.kind === 'integer') &&
-            typedValue.value !== undefined
-          ) {
-            result[key] = typedValue.value as number;
-          } else if (typedValue.kind === 'currency' && typedValue.value) {
-            result[key] = (typedValue.value as { amount: number }).amount; // Adjust based on actual type
-          } else if (typedValue.kind === 'date' && typedValue.value) {
-            result[key] = (typedValue.value as Date).toISOString();
-          } else {
-            result[key] = null;
-          }
-        }
-        return result as T;
-      }).filter(item => item !== null) as T[];
+    // Remove core fields to get other fields
+    const otherFields = { ...extractedData };
+    const coreFields = [
+      'InvoiceId',
+      'InvoiceDate',
+      'DueDate',
+      'VendorName',
+      'VendorAddress',
+      'VendorAddressRecipient',
+      'CustomerName',
+      'CustomerId',
+      'CustomerAddress',
+      'CustomerAddressRecipient',
+      'PurchaseOrder',
+      'PaymentTerm',
+      'VendorTaxId',
+      'CustomerTaxId',
+      'SubTotal',
+      'TotalTax',
+      'TotalDiscount',
+      'InvoiceTotal',
+      'AmountDue',
+      'PreviousUnpaidBalance',
+      'RemittanceAddress',
+      'RemittanceAddressRecipient',
+      'ServiceStartDate',
+      'ServiceEndDate',
+      'Items',
+    ];
+    coreFields.forEach((field) => delete otherFields[field]);
+    invoice.other_fields = otherFields;
+
+    // Save the invoice
+    const savedInvoice = await this.invoiceRepository.save(invoice);
+
+    // Save line items if any
+    if (extractedData.Items && Array.isArray(extractedData.Items)) {
+      for (const itemData of extractedData.Items) {
+        if (!itemData) continue; // Handle null or undefined items
+        const lineItem = new ProcessingInvoiceLineItem();
+        lineItem.invoice = savedInvoice;
+        lineItem.description = itemData.Description || null;
+        lineItem.amount = itemData.Amount || null;
+        lineItem.date = itemData.Date || null;
+        lineItem.quantity = itemData.Quantity || null;
+        lineItem.unit_price = itemData.UnitPrice || null;
+        lineItem.product_code = itemData.ProductCode || null;
+        lineItem.tax = itemData.Tax || null;
+        lineItem.tax_rate = itemData.TaxRate || null;
+        lineItem.unit = itemData.Unit || null;
+
+        // Remove core fields to get other fields
+        const itemOtherFields = { ...itemData };
+        const itemCoreFields = [
+          'Description',
+          'Amount',
+          'Date',
+          'Quantity',
+          'UnitPrice',
+          'ProductCode',
+          'Tax',
+          'TaxRate',
+          'Unit',
+        ];
+        itemCoreFields.forEach((field) => delete itemOtherFields[field]);
+        lineItem.other_fields = itemOtherFields;
+
+        await this.lineItemRepository.save(lineItem);
+      }
     }
-    return null;
-  }
-
-  async analyzeWithAzureLayoutModel(): Promise<string> {
-    // Implement if needed
-    return 'Layout analysis result';
   }
 }

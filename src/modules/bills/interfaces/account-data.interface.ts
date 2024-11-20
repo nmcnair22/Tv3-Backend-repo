@@ -1,10 +1,10 @@
 // src/modules/bills/interfaces/account-data.interface.ts
 
 export interface AccountData {
-    multipleLocations: number;
+    multipleLocations: number; // 0 for SLB, 1 for MLB
     accountNumber: string;
     customerName: string;
     locationName: string;
-    // Add any other fields you need
+    // Add other relevant fields as needed
   }
   

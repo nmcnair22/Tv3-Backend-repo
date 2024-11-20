@@ -25,6 +25,7 @@ import { DsoModule } from './modules/dso/dso.module';
 import { DynamicsAccountService } from './modules/dynamics/dynamics-account.service';
 import { DynamicsCustomerService } from './modules/dynamics/dynamics-customer.service';
 import { FinancialDashboardLocalModule } from './modules/financial-dashboard-local/financial-dashboard-local.module';
+import { JobsModule } from './modules/jobs/jobs.module';
 import { PaymentHistoryModule } from './modules/payments/payment-history.module';
 import { SyncModule } from './modules/sync/sync.module';
 
@@ -32,10 +33,10 @@ import { SyncModule } from './modules/sync/sync.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
-      isGlobal: true, // Makes ConfigService available globally
+      isGlobal: true, 
     }),
     TypeOrmModule.forRoot(AppDataSource.options),
-    ScheduleModule.forRoot(), // Add ScheduleModule here
+    ScheduleModule.forRoot(),
     // Core Modules
     HttpModule,
     UserModule,
@@ -55,6 +56,7 @@ import { SyncModule } from './modules/sync/sync.module';
     DsoModule,
     CustomersModule,
     BillsModule,
+    JobsModule,
   ],
   providers: [DynamicsCustomerService, DynamicsAccountService],
   exports: [

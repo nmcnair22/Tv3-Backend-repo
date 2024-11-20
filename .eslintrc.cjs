@@ -1,27 +1,34 @@
-export default {
+module.exports = {
   parser: '@typescript-eslint/parser',
   parserOptions: {
     project: 'tsconfig.json',
-    tsconfigRootDir: require('path').resolve(__dirname),
     sourceType: 'module',
   },
-  plugins: ['@typescript-eslint/eslint-plugin', 'prettier'],
+  plugins: ['@typescript-eslint', 'prettier'],
   extends: [
     'plugin:@typescript-eslint/recommended',
     'plugin:prettier/recommended',
   ],
   root: true,
   env: {
-    node: true, // Ensures 'module' and '__dirname' are recognized
+    node: true,
     jest: true,
-    es6: true, // Enables ES6 features like 'let', 'const', etc.
+    es6: true,
   },
-  ignorePatterns: ['.eslintrc.js'],
+  ignorePatterns: [
+    '.eslintrc.js',
+    '.eslintrc.cjs',
+    'jest.config.js',
+    'jest.config.cjs',
+    'webpack.config.js', // Add any other config files you have
+  ],
   rules: {
     '@typescript-eslint/interface-name-prefix': 'off',
     '@typescript-eslint/explicit-function-return-type': 'off',
     '@typescript-eslint/explicit-module-boundary-types': 'off',
     '@typescript-eslint/no-explicit-any': 'off',
-    'prettier/prettier': 'error', 
+    'prettier/prettier': 'error',
+    '@typescript-eslint/no-var-requires': 'off',
+    '@typescript-eslint/no-require-imports': 'off',
   },
 };

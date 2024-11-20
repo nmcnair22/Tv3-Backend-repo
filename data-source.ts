@@ -19,7 +19,7 @@ export const AppDataSource = new DataSource({
   logging: false,
 
   // Add the timezone and extra options here
-  timezone: 'Z', // Use 'Z' for UTC, or adjust as needed ('local', '-08:00' for PST)
+  timezone: 'Z',
   extra: {
     dateStrings: true,
   },
