@@ -20,7 +20,10 @@ export class JobsService {
    * @param payload - The data required to process the job.
    * @returns The created job entity.
    */
-  async enqueueJob(type: string, payload: Record<string, any>): Promise<JobEntity> {
+  async enqueueJob(
+    type: string,
+    payload: Record<string, any>,
+  ): Promise<JobEntity> {
     const job = this.jobRepository.create({
       type,
       payload,
@@ -52,19 +55,23 @@ export class JobsService {
    * @param status - The new status of the job.
    * @param result - The result or error message.
    */
-  async updateJobStatus(jobId: string, status: JobStatus, result: string): Promise<void> {
+  async updateJobStatus(
+    jobId: string,
+    status: JobStatus,
+    result: string,
+  ): Promise<void> {
     await this.jobRepository.update(jobId, { status, result });
     this.logger.log(`Updated job ${jobId} to status ${status}`);
   }
 
-    /**
+  /**
    * Retrieves all active jobs.
    * @returns Array of active jobs.
    */
-    async getActiveJobs(): Promise<JobEntity[]> {
-        return this.jobRepository.find({
-          where: { status: JobStatus.PENDING },
-          order: { createdAt: 'ASC' },
-        });
-      }
+  async getActiveJobs(): Promise<JobEntity[]> {
+    return this.jobRepository.find({
+      where: { status: JobStatus.PENDING },
+      order: { createdAt: 'ASC' },
+    });
+  }
 }

@@ -23,29 +23,28 @@ export class BillProcessor {
       this.logger.log(`Processing bill: ${filePath} (Job ID: ${job.id})`);
 
       // Emit start of processing
-      this.billGateway.emitUpdate(
-        job.id.toString(),
-        { status: 'started', filePath, jobId: job.id },
-      );
+      this.billGateway.emitUpdate(job.id.toString(), {
+        status: 'started',
+        filePath,
+        jobId: job.id,
+      });
+
+      // Corrected method name
+      const analysisResult = await this.billsService.processBill(filePath);
 
       // Process the bill
-      const analysisResult = await this.billsService.analyzeBill(filePath);
-
-      // Emit completion of processing
-      this.billGateway.emitUpdate(
-        job.id.toString(),
-        { status: 'completed', analysisResult },
+      this.billGateway.emitUpdate(job.id.toString(), {
+        status: 'completed',
+        analysisResult,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to process bill: ${filePath} (Job ID: ${job.id})`,
+        error.stack,
       );
-
-      return analysisResult;
-    } catch (error: unknown) {
-      this.logger.error(`Error processing bill ${filePath}:`, error as Error);
 
       // Emit error to frontend
-      this.billGateway.emitError(
-        job.id.toString(),
-        (error as Error).message,
-      );
+      this.billGateway.emitError(job.id.toString(), (error as Error).message);
 
       throw error;
     }

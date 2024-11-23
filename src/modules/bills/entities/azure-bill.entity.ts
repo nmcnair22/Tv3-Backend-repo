@@ -1,6 +1,14 @@
 // src/modules/bills/entities/azure-bill.entity.ts
 
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, Unique } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  OneToMany,
+  PrimaryGeneratedColumn,
+  Unique,
+} from 'typeorm';
+import { AzureInvoiceItem } from './azure-invoice-item.entity';
 
 @Entity()
 @Unique(['fingerprint'])
@@ -25,4 +33,7 @@ export class AzureBill {
 
   @CreateDateColumn()
   processedAt: Date;
+
+  @OneToMany(() => AzureInvoiceItem, (invoiceItem) => invoiceItem.azureBill)
+  invoiceItems: AzureInvoiceItem[];
 }

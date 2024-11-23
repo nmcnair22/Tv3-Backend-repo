@@ -52,4 +52,8 @@ export class ProcessingInvoiceLineItem {
     onUpdate: 'CURRENT_TIMESTAMP',
   })
   updated_at: Date;
+
+  category: string | null;
+
+  subcategory: string | null;
 }

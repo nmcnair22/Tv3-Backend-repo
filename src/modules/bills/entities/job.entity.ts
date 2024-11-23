@@ -1,6 +1,12 @@
-// src/modules/bills/entities/job.entity.ts
+// src/modules/jobs/entities/job.entity.ts
 
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 export enum JobStatus {
   PENDING = 'pending',
@@ -30,9 +36,9 @@ export class JobEntity {
   @Column({ nullable: true })
   result: string; // JSON stringified result or error message
 
-  @CreateDateColumn()
+  @CreateDateColumn({ name: 'created_at' }) // Specify the column name
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ name: 'updated_at' }) // Specify the column name
   updatedAt: Date;
 }

@@ -1,39 +1,45 @@
 // src/modules/bills/bills.module.ts
 
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { JobsModule } from '../jobs/jobs.module';
+
+// Import entities and services
 import { BillGateway } from './bill.gateway';
 import { BillsController } from './bills.controller';
 import { BillsService } from './bills.service';
-import { AzureBill } from './entities/azure-bill.entity';
-import { BillProcessor } from './processors/bill.processor';
 import { AnalyzeService } from './services/analyze.service';
 import { ArchiveService } from './services/archive.service';
-import { ValidateService } from './services/validate.service';
+import { BillTypeService } from './services/bill-type.service';
+import { ValidationService } from './services/validate.service';
 
-// Import the new entities
+// Entities
+import { AzureBill } from './entities/azure-bill.entity';
 import { ProcessingInvoiceLineItem } from './entities/processing-invoice-line-item.entity';
 import { ProcessingInvoice } from './entities/processing-invoice.entity';
+import { TemMasterViewUpdated } from './entities/tem-master-view-updated.entity';
+
+// Import JobsModule
+import { JobsModule } from '../jobs/jobs.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([
-      AzureBill,
-      ProcessingInvoice,
-      ProcessingInvoiceLineItem,
-    ]),
-    JobsModule,
-    // ... other imports if necessary
+    TypeOrmModule.forFeature(
+      [AzureBill, ProcessingInvoice, ProcessingInvoiceLineItem],
+      'default',
+    ),
+    TypeOrmModule.forFeature([TemMasterViewUpdated], 'temConnection'),
+    forwardRef(() => JobsModule), // Use forwardRef here
   ],
   controllers: [BillsController],
   providers: [
     BillsService,
-    BillProcessor,
-    AnalyzeService,
-    ValidateService,
-    ArchiveService,
     BillGateway,
+    AnalyzeService,
+    ArchiveService,
+    ValidationService,
+    BillTypeService,
+    // Remove PipelineService if it's undefined or not used
+    // Any other providers
   ],
   exports: [BillsService],
 })

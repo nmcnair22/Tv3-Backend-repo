@@ -1,7 +1,6 @@
 // src/modules/bills/bills.controller.ts
 
 import {
-  Body,
   Controller,
   Get,
   HttpException,
@@ -13,25 +12,21 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import * as fs from 'fs';
-import { JobsService } from '../jobs/jobs.service';
+import * as path from 'path';
 import { BillsService } from './bills.service';
-import { ValidateBillDto } from './dto/validate-bill.dto';
 
 @Controller('api/bills') // Prefix all routes with /api/bills
 export class BillsController {
   private readonly logger = new Logger(BillsController.name);
 
-  constructor(
-    private readonly billsService: BillsService,
-    private readonly jobsService: JobsService,
-  ) {}
+  constructor(private readonly billsService: BillsService) {}
 
   /**
-   * Uploads and enqueues a bill for processing.
+   * Uploads and processes a single bill.
    * @param file - The uploaded PDF file.
-   * @returns Job initiation response.
+   * @returns Processing result.
    */
-  @Post('analyze')
+  @Post('process')
   @UseInterceptors(
     FileInterceptor('file', {
       fileFilter: (req, file, cb) => {
@@ -43,15 +38,10 @@ export class BillsController {
       limits: {
         fileSize: 10 * 1024 * 1024, // 10 MB limit
       },
+      dest: './uploads/', // Ensure this directory exists
     }),
   )
-  async analyzeBill(
-    @UploadedFile() file: Express.Multer.File,
-  ): Promise<{
-    message: string;
-    jobId: string;
-    renamedFileName: string;
-  }> {
+  async processBill(@UploadedFile() file: Express.Multer.File): Promise<any> {
     if (!file) {
       throw new HttpException('No file uploaded', HttpStatus.BAD_REQUEST);
     }
@@ -59,20 +49,22 @@ export class BillsController {
     const filePath = file.path;
 
     if (!fs.existsSync(filePath)) {
-      throw new HttpException('Uploaded file not found on server', HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(
+        'Uploaded file not found on server',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
 
     try {
-      // Enqueue the job for processing
-      const job = await this.jobsService.enqueueJob('process_bill', { filePath });
+      // Process the bill
+      const result = await this.billsService.processBill(filePath);
 
-      return {
-        message: 'Bill analysis enqueued',
-        jobId: job.id,
-        renamedFileName: file.filename,
-      };
+      // Optionally delete the uploaded file after processing
+      fs.unlinkSync(filePath);
+
+      return result;
     } catch (error) {
-      this.logger.error('Error enqueuing bill processing job:', error);
+      this.logger.error('Error processing bill:', error);
       throw new HttpException(
         'An error occurred while processing the bill.',
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -81,67 +73,47 @@ export class BillsController {
   }
 
   /**
-   * Retrieves active jobs.
-   * @returns Array of active jobs.
+   * Processes all bills in the assets folder.
+   * @returns An array of processing results.
    */
-  @Get('current-jobs')
-  async getCurrentJobs() {
-    const jobs = await this.jobsService.getActiveJobs();
-    return jobs.map(job => ({
-      id: job.id,
-      type: job.type,
-      payload: job.payload,
-      status: job.status,
-      result: job.result,
-      createdAt: job.createdAt,
-      updatedAt: job.updatedAt,
-    }));
+  @Post('process-all')
+  async processAllBills(): Promise<any> {
+    try {
+      const assetsDir = path.join(__dirname, '../../../../test/assets');
+
+      const results =
+        await this.billsService.processAllBillsInFolder(assetsDir);
+
+      return {
+        message: 'Batch processing completed',
+        results: results,
+      };
+    } catch (error) {
+      this.logger.error('Error during batch bill processing:', error);
+      throw new HttpException(
+        'An error occurred while processing the bills.',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 
   /**
-   * Retrieves processed bills from the database.
-   * @returns Array of processed bills.
+   * Retrieves all processed invoices.
+   * @returns Array of processed invoices.
    */
   @Get('processed')
-  async getProcessedBills() {
+  async getProcessedInvoices() {
     try {
-      const processedBills = await this.billsService.getProcessedBills();
-      return processedBills;
+      const invoices = await this.billsService.getProcessedInvoices();
+      return invoices;
     } catch (error) {
-      this.logger.error('Failed to fetch processed bills:', error);
-      throw new HttpException('Failed to fetch processed bills', HttpStatus.INTERNAL_SERVER_ERROR);
+      this.logger.error('Failed to fetch processed invoices:', error);
+      throw new HttpException(
+        'Failed to fetch processed invoices',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
-  /**
-   * Validates a bill manually if needed.
-   * @param validateBillDto - Data for validation.
-   * @returns Validation result.
-   */
-  @Post('validate')
-  async validateBill(@Body() validateBillDto: ValidateBillDto) {
-    try {
-      const result = await this.billsService.validateBill(validateBillDto.analysisResult);
-      return result;
-    } catch (error) {
-      this.logger.error('Validation failed:', error);
-      throw new HttpException('Validation failed', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
-
-  /**
-   * Archives a bill.
-   * @param archiveData - Data for archiving.
-   * @returns Archiving result.
-   */
-  @Post('archive')
-  async archiveBill(@Body() archiveData: { billId: string; filePath: string }) {
-    try {
-      const result = await this.billsService.archiveBill(archiveData);
-      return result;
-    } catch (error) {
-      this.logger.error('Archiving failed:', error);
-      throw new HttpException('Archiving failed', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
+  // Add additional endpoints as needed
 }

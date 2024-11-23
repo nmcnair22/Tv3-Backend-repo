@@ -1,6 +1,13 @@
 // src/modules/bills/entities/processing-invoice.entity.ts
 
-import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  OneToMany,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 import { ProcessingInvoiceLineItem } from './processing-invoice-line-item.entity';
 
 @Entity('processing_invoices')
@@ -83,14 +90,28 @@ export class ProcessingInvoice {
   @Column({ type: 'json', nullable: true })
   other_fields: any;
 
-  @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  // Fields for bill type determination
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  bill_type: string; // 'SLB' or 'MLB'
+
+  @Column({ type: 'boolean', default: false })
+  audit_flag: boolean;
+
+  // Fields for validation results
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  validation_status: string; // 'Pass' or 'Fail'
+
+  @Column({ type: 'int', nullable: true })
+  validation_level: number; // 1 or 2
+
+  @Column({ type: 'json', nullable: true })
+  validation_errors: any; // Adjusted to 'any' to match JSON data type
+
+  // Timestamps
+  @CreateDateColumn({ type: 'timestamp' })
   created_at: Date;
 
-  @Column({
-    type: 'timestamp',
-    default: () => 'CURRENT_TIMESTAMP',
-    onUpdate: 'CURRENT_TIMESTAMP',
-  })
+  @UpdateDateColumn({ type: 'timestamp' })
   updated_at: Date;
 
   @OneToMany(() => ProcessingInvoiceLineItem, (lineItem) => lineItem.invoice, {

@@ -3,7 +3,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { BillsService } from '../bills/bills.service';
-import { JobStatus } from '../bills/entities/job.entity';
+import { JobEntity, JobStatus } from '../bills/entities/job.entity';
 import { JobsService } from './jobs.service';
 
 @Injectable()
@@ -44,7 +44,9 @@ export class JobsProcessor {
 
       // Process the job based on its type
       if (job.type === 'process_bill') {
-        const analysisResult = await this.billsService.analyzeBill(job.payload.filePath);
+        const analysisResult = await this.billsService.processBill(
+          job.payload.filePath,
+        );
 
         // Update job status to COMPLETED
         await this.jobsService.updateJobStatus(
