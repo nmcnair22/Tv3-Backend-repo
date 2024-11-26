@@ -28,8 +28,13 @@ import { JobsModule } from './modules/jobs/jobs.module';
 import { PaymentHistoryModule } from './modules/payments/payment-history.module';
 import { SyncModule } from './modules/sync/sync.module';
 
-// Import entities for multiple database connections
-import { TemMasterViewUpdated } from './modules/bills/entities/tem-master-view-updated.entity';
+// Import entities for 'temConnection'
+import { TemMasterView } from './modules/bills/entities/tem-master-view.entity';
+import { TemVendorOld } from './modules/bills/entities/tem-vendor-old.entity';
+// Import entities for 'cissdmConnection'
+import { CissdmCustomer } from './modules/bills/entities/cissdm-customer.entity';
+import { CissdmLocation } from './modules/bills/entities/cissdm-location.entity';
+import { CissdmProvider } from './modules/bills/entities/cissdm-provider.entity';
 
 @Module({
   imports: [
@@ -38,40 +43,49 @@ import { TemMasterViewUpdated } from './modules/bills/entities/tem-master-view-u
     }),
     // Default database connection for your local development database
     TypeOrmModule.forRootAsync({
-      name: 'default', // Default connection name
+      name: 'default',
       imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
+      useFactory: (configService: ConfigService) => ({
         type: 'mysql',
-        host: configService.get<string>('DB_HOST') || 'localhost',
-        port: parseInt(configService.get<string>('DB_PORT'), 10) || 3306,
-        username: configService.get<string>('DB_USERNAME') || 'root',
-        password: configService.get<string>('DB_PASSWORD') || 'password',
-        database:
-          configService.get<string>('DB_DATABASE') || 'business_central_db',
-        entities: [__dirname + '/modules/**/*.entity{.ts,.js}'],
-        synchronize: false, // Set to true for development, false for production
-        logging: false,
-        timezone: 'Z',
-        extra: {
-          dateStrings: false,
-        },
+        host: configService.get('DB_HOST', 'localhost'),
+        port: parseInt(configService.get('DB_PORT', '3306'), 10),
+        username: configService.get('DB_USERNAME', 'root'),
+        password: configService.get('DB_PASSWORD', 'password'),
+        database: configService.get('DB_DATABASE', 'business_central_db'),
+        entities: [__dirname + '/**/*.entity{.ts,.js}'],
+        synchronize: false,
       }),
       inject: [ConfigService],
     }),
-    // TEM database connection for the production database
+    // Connection to the old `tem` database
     TypeOrmModule.forRootAsync({
       name: 'temConnection',
       imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
+      useFactory: (configService: ConfigService) => ({
         type: 'mysql',
-        host: configService.get<string>('TEM_DB_HOST'),
-        port: parseInt(configService.get<string>('TEM_DB_PORT'), 10) || 3306,
-        username: configService.get<string>('TEM_DB_USERNAME'),
-        password: configService.get<string>('TEM_DB_PASSWORD'),
-        database: configService.get<string>('TEM_DB_DATABASE'),
-        entities: [TemMasterViewUpdated], // Import the TEM entity
-        synchronize: false, // Important: Disable synchronization for production DB
-        logging: false,
+        host: configService.get('TEM_DB_HOST'),
+        port: parseInt(configService.get('TEM_DB_PORT', '3306'), 10),
+        username: configService.get('TEM_DB_USERNAME'),
+        password: configService.get('TEM_DB_PASSWORD'),
+        database: configService.get('TEM_DB_DATABASE'),
+        entities: [TemMasterView, TemVendorOld],
+        synchronize: false,
+      }),
+      inject: [ConfigService],
+    }),
+    // Connection to the old `cissdm` database
+    TypeOrmModule.forRootAsync({
+      name: 'cissdmConnection',
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => ({
+        type: 'mysql',
+        host: configService.get('CISSDM_DB_HOST'),
+        port: parseInt(configService.get('CISSDM_DB_PORT', '3306'), 10),
+        username: configService.get('CISSDM_DB_USERNAME'),
+        password: configService.get('CISSDM_DB_PASSWORD'),
+        database: configService.get('CISSDM_DB_DATABASE'),
+        entities: [CissdmCustomer, CissdmLocation, CissdmProvider],
+        synchronize: false,
       }),
       inject: [ConfigService],
     }),

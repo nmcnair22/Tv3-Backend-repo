@@ -1,9 +1,11 @@
-// src/modules/bills/services/validation.service.ts
+// src/modules/bills/services/validate.service.ts
 
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+
 import { ProcessingInvoice } from '../entities/processing-invoice.entity';
+import { ValidationResult } from '../interfaces/validation-result.interface';
 
 @Injectable()
 export class ValidationService {
@@ -81,11 +83,10 @@ export class ValidationService {
         customer_name: invoice.customer_name,
         customer_id: invoice.customer_id,
         customer_address: formatAddress(invoice.customer_address),
-        invoice_total: invoice.invoice_total,
-        amount_due: invoice.amount_due,
+        invoice_total: invoice.invoice_total ?? null,
+        amount_due: invoice.amount_due ?? null,
         service_start_date: invoice.service_start_date,
         service_end_date: invoice.service_end_date,
-        // Include other fields as necessary
       },
       line_items:
         invoice.line_items?.map((item) => ({
@@ -133,7 +134,7 @@ Please process this bill.
 **Invoice Data:**
 ${invoiceData}
 `;
-
+    this.logger.debug('Message content sent to OpenAI:', messageContent);
     try {
       await axios.post(
         `${this.openaiApiEndpoint}/threads/${threadId}/messages`,
@@ -273,15 +274,34 @@ ${invoiceData}
       }
       const jsonResponse = jsonMatch[0];
 
-      const validationResult: ValidationResult = JSON.parse(jsonResponse);
+      const validationData = JSON.parse(jsonResponse);
+
+      const validationResult: ValidationResult = {
+        status:
+          validationData.ValidationResult?.Level === 'Fail' ? 'Fail' : 'Pass',
+        level:
+          validationData.ValidationResult?.Level === 'Success_Level_2'
+            ? 2
+            : validationData.ValidationResult?.Level === 'Success_Level_1'
+              ? 1
+              : 0,
+        errors: validationData.ValidationResult?.Errors || null,
+        updatedData: validationData.updatedData || null,
+        ProcessedData: validationData.ProcessedData || null,
+        LineItems: validationData.LineItems || [],
+        ValidationResult: validationData.ValidationResult || null,
+      };
+
       return validationResult;
     } catch (error) {
-      this.logger.error('Failed to parse validation response from assistant.');
+      this.logger.error(
+        'Failed to parse validation response from assistant.',
+        error,
+      );
       throw new Error('Failed to parse validation response from assistant.');
     }
   }
 }
-
 // Define ContentItem and Message interfaces
 interface ContentItem {
   type: string;
@@ -296,11 +316,4 @@ interface Message {
   role: string;
   content: ContentItem[];
   // Include other properties if necessary
-}
-
-interface ValidationResult {
-  status: 'Pass' | 'Fail';
-  level: 1 | 2;
-  errors?: string[];
-  updatedData?: any;
 }

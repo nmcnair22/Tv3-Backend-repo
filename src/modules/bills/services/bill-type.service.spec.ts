@@ -8,7 +8,7 @@ import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { IsNull, Not, Repository } from 'typeorm';
 import { ProcessingInvoiceLineItem } from '../entities/processing-invoice-line-item.entity';
 import { ProcessingInvoice } from '../entities/processing-invoice.entity';
-import { TemMasterViewUpdated } from '../entities/tem-master-view-updated.entity';
+import { TemMasterView } from '../entities/tem-master-view.entity';
 import { BillTypeService } from './bill-type.service';
 
 describe('BillTypeService Integration Test', () => {
@@ -50,7 +50,7 @@ describe('BillTypeService Integration Test', () => {
             password: configService.get<string>('TEM_DB_PASSWORD'),
             database: configService.get<string>('TEM_DB_DATABASE'),
             charset: 'utf8mb4_general_ci',
-            entities: [TemMasterViewUpdated],
+            entities: [TemMasterView],
             synchronize: false,
             autoLoadEntities: true,
           }),
@@ -60,7 +60,7 @@ describe('BillTypeService Integration Test', () => {
           [ProcessingInvoice, ProcessingInvoiceLineItem],
           'default',
         ),
-        TypeOrmModule.forFeature([TemMasterViewUpdated], 'temConnection'),
+        TypeOrmModule.forFeature([TemMasterView], 'temConnection'),
       ],
       providers: [BillTypeService],
     }).compile();

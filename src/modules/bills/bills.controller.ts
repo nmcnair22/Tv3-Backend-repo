@@ -7,28 +7,29 @@ import {
   HttpStatus,
   Logger,
   Post,
-  UploadedFile,
+  UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import * as fs from 'fs';
 import * as path from 'path';
 import { BillsService } from './bills.service';
 
-@Controller('api/bills') // Prefix all routes with /api/bills
+@Controller('api/bills')
 export class BillsController {
   private readonly logger = new Logger(BillsController.name);
 
   constructor(private readonly billsService: BillsService) {}
 
   /**
-   * Uploads and processes a single bill.
-   * @param file - The uploaded PDF file.
-   * @returns Processing result.
+   * Uploads and processes bills (single or multiple).
+   * @param files - The uploaded PDF files.
+   * @returns Processing results.
    */
   @Post('process')
   @UseInterceptors(
-    FileInterceptor('file', {
+    FilesInterceptor('files', 20, {
+      // Adjust maxCount as needed
       fileFilter: (req, file, cb) => {
         if (file.mimetype !== 'application/pdf') {
           return cb(new Error('Only PDF files are allowed!'), false);
@@ -36,37 +37,64 @@ export class BillsController {
         cb(null, true);
       },
       limits: {
-        fileSize: 10 * 1024 * 1024, // 10 MB limit
+        fileSize: 10 * 1024 * 1024, // 10 MB limit per file
       },
       dest: './uploads/', // Ensure this directory exists
     }),
   )
-  async processBill(@UploadedFile() file: Express.Multer.File): Promise<any> {
-    if (!file) {
-      throw new HttpException('No file uploaded', HttpStatus.BAD_REQUEST);
-    }
-
-    const filePath = file.path;
-
-    if (!fs.existsSync(filePath)) {
-      throw new HttpException(
-        'Uploaded file not found on server',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+  async processBills(
+    @UploadedFiles() files: Express.Multer.File[],
+  ): Promise<any> {
+    if (!files || files.length === 0) {
+      throw new HttpException('No files uploaded', HttpStatus.BAD_REQUEST);
     }
 
     try {
-      // Process the bill
-      const result = await this.billsService.processBill(filePath);
+      // Process each bill concurrently
+      const processingPromises = files.map(async (file) => {
+        const filePath = file.path;
 
-      // Optionally delete the uploaded file after processing
-      fs.unlinkSync(filePath);
+        if (!fs.existsSync(filePath)) {
+          this.logger.error(`Uploaded file not found on server: ${filePath}`);
+          return {
+            file: file.originalname,
+            error: 'Uploaded file not found on server',
+          };
+        }
 
-      return result;
+        try {
+          const result = await this.billsService.processBill(filePath);
+
+          // Optionally delete the uploaded file after processing
+          // fs.unlinkSync(filePath);
+
+          return {
+            file: file.originalname,
+            result,
+          };
+        } catch (error) {
+          this.logger.error(
+            `Error processing bill ${file.originalname}:`,
+            error,
+          );
+          return {
+            file: file.originalname,
+            error:
+              error.message || 'An error occurred while processing the bill.',
+          };
+        }
+      });
+
+      const results = await Promise.all(processingPromises);
+
+      return {
+        message: 'Bills processed successfully',
+        results,
+      };
     } catch (error) {
-      this.logger.error('Error processing bill:', error);
+      this.logger.error('Error processing bills:', error);
       throw new HttpException(
-        'An error occurred while processing the bill.',
+        'An error occurred while processing the bills.',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
