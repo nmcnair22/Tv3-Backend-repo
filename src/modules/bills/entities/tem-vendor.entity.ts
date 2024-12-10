@@ -1,12 +1,12 @@
 // src/modules/bills/entities/tem-vendor.entity.ts
 
 import {
-    Column,
-    CreateDateColumn,
-    Entity,
-    OneToMany,
-    PrimaryGeneratedColumn,
-    UpdateDateColumn,
+  Column,
+  CreateDateColumn,
+  Entity,
+  OneToMany,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 import { TemAccount } from './tem-account.entity';
 
@@ -17,9 +17,6 @@ export class TemVendor {
 
   @Column({ length: 255 })
   name: string;
-
-  @Column({ type: 'int', unique: true })
-  tem_vendor_id: number;
 
   @Column({ length: 100, nullable: true })
   short_name: string;

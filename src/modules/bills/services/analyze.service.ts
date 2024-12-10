@@ -50,6 +50,7 @@ export class AnalyzeService {
    */
   async analyzeWithAzure(filePath: string): Promise<ProcessingInvoice> {
     return this.azureLimit(async () => {
+      // Check if file exists
       if (!fs.existsSync(filePath)) {
         this.logger.error(`File not found: ${filePath}`);
         throw new Error(`File not found: ${filePath}`);
@@ -59,6 +60,16 @@ export class AnalyzeService {
       this.logger.log(`Analyzing file with Azure: ${filePath}`);
       this.logger.log(`File size: ${fileSizeInBytes} bytes`);
 
+      const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+      if (fileSizeInBytes > MAX_FILE_SIZE) {
+        this.logger.error(
+          `File size exceeds maximum allowed size of ${MAX_FILE_SIZE} bytes`,
+        );
+        throw new Error(
+          `File size exceeds maximum allowed size of ${MAX_FILE_SIZE} bytes`,
+        );
+      }
+
       if (fileSizeInBytes === 0) {
         this.logger.error(`File is empty: ${filePath}`);
         throw new Error(`File is empty: ${filePath}`);
@@ -66,57 +77,83 @@ export class AnalyzeService {
 
       this.logger.log(`Starting Azure analysis for file: ${filePath}`);
 
-      try {
-        const fileContent = fs.readFileSync(filePath);
-        // Log the size of the file content
-        this.logger.log(`File content size: ${fileContent.length} bytes`);
+      const maxRetries = 3;
+      let attempt = 0;
 
-        const initialResponse = await this.client
-          .path('/documentModels/{modelId}:analyze', 'prebuilt-invoice')
-          .post({
-            contentType: 'application/pdf',
-            body: fileContent,
-          });
+      while (attempt < maxRetries) {
+        try {
+          // Read the file (either synchronously or using streams if necessary)
+          const fileContent = fs.readFileSync(filePath);
 
-        if (isUnexpected(initialResponse)) {
-          throw initialResponse.body.error;
+          // Introduce delay to prevent rate limiting
+          await new Promise((resolve) => setTimeout(resolve, 200)); // 200ms delay
+
+          const initialResponse = await this.client
+            .path('/documentModels/{modelId}:analyze', 'prebuilt-invoice')
+            .post({
+              contentType: 'application/pdf',
+              body: fileContent,
+            });
+
+          // Handle unexpected responses
+          if (isUnexpected(initialResponse)) {
+            throw initialResponse.body.error;
+          }
+
+          const poller = await getLongRunningPoller(
+            this.client,
+            initialResponse,
+          );
+          const response = await poller.pollUntilDone();
+
+          if (isUnexpected(response)) {
+            throw response.body.error;
+          }
+
+          const result = response.body as AnalyzeResultOperationOutput;
+          const analyzeResult = result.analyzeResult;
+
+          if (!analyzeResult) {
+            throw new Error('Failed to analyze the invoice.');
+          }
+
+          const documents = analyzeResult.documents;
+          const document = documents && documents[0];
+          if (!document) {
+            throw new Error('Expected at least one document in the result.');
+          }
+
+          // Extract all fields dynamically
+          const extractedData = this.extractFields(document);
+          this.logger.log(
+            `Extracted data: ${JSON.stringify(extractedData, null, 2)}`,
+          );
+
+          // Save the extracted data to the database and get the saved invoice
+          const savedInvoice = await this.saveExtractedData(extractedData);
+
+          this.logger.log(`Saved invoice with ID: ${savedInvoice.id}`);
+          return savedInvoice;
+        } catch (error) {
+          attempt++;
+          const statusCode =
+            error.statusCode || error.response?.statusCode || 0;
+          const isRetryable = [429, 500, 502, 503, 504].includes(statusCode);
+
+          if (isRetryable && attempt < maxRetries) {
+            const delay = Math.pow(2, attempt) * 1000; // Exponential backoff
+            this.logger.warn(
+              `Attempt ${attempt} failed with status ${statusCode}. Retrying in ${delay} ms...`,
+            );
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          } else {
+            this.logger.error(
+              `Analysis failed after ${attempt} attempts: ${error.message}`,
+              { error },
+            );
+            throw error;
+          }
         }
-
-        const poller = await getLongRunningPoller(this.client, initialResponse);
-        const response = await poller.pollUntilDone();
-
-        if (isUnexpected(response)) {
-          throw response.body.error;
-        }
-
-        const result = response.body as AnalyzeResultOperationOutput;
-        const analyzeResult = result.analyzeResult;
-
-        if (!analyzeResult) {
-          throw new Error('Failed to analyze the invoice.');
-        }
-
-        const documents = analyzeResult.documents;
-        const document = documents && documents[0];
-        if (!document) {
-          throw new Error('Expected at least one document in the result.');
-        }
-
-        // Extract all fields dynamically
-        const extractedData = this.extractFields(document);
-        this.logger.log(
-          `Extracted data: ${JSON.stringify(extractedData, null, 2)}`,
-        );
-
-        // Save the extracted data to the database and get the saved invoice
-        const savedInvoice = await this.saveExtractedData(extractedData);
-
-        this.logger.log(`Saved invoice with ID: ${savedInvoice.id}`);
-
-        return savedInvoice;
-      } catch (error) {
-        this.logger.error(`Azure analysis error: ${(error as Error).message}`);
-        throw error;
       }
     });
   }

@@ -23,7 +23,8 @@ export class BillGateway
 
   private readonly logger = new Logger(BillGateway.name);
 
-  afterInit(server: Server) {
+  afterInit() {
+    // Removed the unused 'server' parameter
     this.logger.log('WebSocket server initialized');
   }
 
@@ -65,5 +66,23 @@ export class BillGateway
   emitEvent(event: string, data: any) {
     this.server.emit(event, data);
     this.logger.debug(`Emitted event ${event}: ${JSON.stringify(data)}`);
+  }
+
+  /**
+   * Emits updates to the processing queue.
+   * @param data - The updated processing queue data.
+   */
+  emitProcessingQueueUpdate(data: any) {
+    this.server.emit('processingQueueUpdate', data);
+    this.logger.debug(`Emitted processingQueueUpdate: ${JSON.stringify(data)}`);
+  }
+
+  /**
+   * Emits updates to the audit bills.
+   * @param data - The updated audit bills data.
+   */
+  emitAuditBillsUpdate(data: any) {
+    this.server.emit('auditBillsUpdate', data);
+    this.logger.debug(`Emitted auditBillsUpdate: ${JSON.stringify(data)}`);
   }
 }

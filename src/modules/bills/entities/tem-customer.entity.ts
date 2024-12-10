@@ -20,7 +20,7 @@ export class TemCustomer {
   name: string;
 
   @Column({ type: 'int', unique: true })
-  cissdm_id: number; // Original customer ID from cissdm
+  cissdm_id: number;
 
   @Column({ nullable: true })
   billing_name: string;

@@ -10,5 +10,6 @@ export class CissdmProvider {
   @Column({ nullable: true })
   carriername: string;
 
-  // Add other fields as necessary based on your mappings
+  @Column({ nullable: true })
+  telephone: string;
 }

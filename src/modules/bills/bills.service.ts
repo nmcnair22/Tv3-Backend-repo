@@ -5,10 +5,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as fs from 'fs';
 import pLimit from 'p-limit';
 import * as path from 'path';
-import { Repository } from 'typeorm';
+import { MoreThan, Repository } from 'typeorm';
 
+import { JobsService } from '../jobs/jobs.service';
 import { BillGateway } from './bill.gateway';
 import { AnalyzeService } from './services/analyze.service';
+import { ArchiveService } from './services/archive.service';
 import { BillTypeService } from './services/bill-type.service';
 import { ValidationService } from './services/validate.service';
 
@@ -32,6 +34,10 @@ import { CissdmProvider } from './entities/cissdm-provider.entity';
 // Import the shared ValidationResult interface
 import { ValidationResult } from './interfaces/validation-result.interface';
 
+// Import EventLogService and EventType
+import { EventType } from './entities/event-log.entity';
+import { EventLogService } from './services/event-log.service';
+
 @Injectable()
 export class BillsService {
   private readonly logger = new Logger(BillsService.name);
@@ -40,6 +46,8 @@ export class BillsService {
     private readonly analyzeService: AnalyzeService,
     private readonly billTypeService: BillTypeService,
     private readonly validationService: ValidationService,
+    private readonly archiveService: ArchiveService,
+    private readonly jobsService: JobsService,
 
     @InjectRepository(ProcessingInvoice)
     private readonly invoiceRepository: Repository<ProcessingInvoice>,
@@ -47,7 +55,6 @@ export class BillsService {
     @InjectRepository(ProcessingInvoiceLineItem)
     private readonly lineItemRepository: Repository<ProcessingInvoiceLineItem>,
 
-    // Repositories for the new entities
     @InjectRepository(TemAccount)
     private readonly temAccountRepository: Repository<TemAccount>,
 
@@ -82,13 +89,9 @@ export class BillsService {
     private readonly cissdmProviderRepository: Repository<CissdmProvider>,
 
     private readonly billGateway: BillGateway,
+    private readonly eventLogService: EventLogService,
   ) {}
 
-  /**
-   * Processes all PDF bills found in the specified folder concurrently.
-   * @param folderPath - The path to the folder containing PDF files.
-   * @returns An array of processing results for each file.
-   */
   async processAllBillsInFolder(folderPath: string): Promise<any[]> {
     if (!folderPath) {
       this.logger.warn('No folder path provided.');
@@ -105,7 +108,6 @@ export class BillsService {
         `Starting concurrent bill processing for folder: ${folderPath}`,
       );
 
-      // Get all PDF files in the folder
       const files = fs.readdirSync(folderPath);
       const pdfFiles = files.filter((file) =>
         file.toLowerCase().endsWith('.pdf'),
@@ -116,8 +118,7 @@ export class BillsService {
         return [];
       }
 
-      const limit = pLimit(10); // Set concurrency limit to 10
-
+      const limit = pLimit(10);
       const processingPromises = pdfFiles.map((file) =>
         limit(() => this.processFile(path.join(folderPath, file))),
       );
@@ -133,11 +134,6 @@ export class BillsService {
     }
   }
 
-  /**
-   * Processes an individual file.
-   * @param filePath - The path to the file.
-   * @returns Processing result.
-   */
   private async processFile(filePath: string): Promise<any> {
     const fileName = path.basename(filePath);
     const fileSizeInBytes = fs.existsSync(filePath)
@@ -167,12 +163,7 @@ export class BillsService {
     }
   }
 
-  /**
-   * Processes a single uploaded bill.
-   * @param filePath - The path to the uploaded PDF file.
-   * @returns Processing result.
-   */
-  async processBill(filePath: string): Promise<any> {
+  async processBill(filePath: string, jobId?: string): Promise<any> {
     if (!filePath) {
       this.logger.warn('No file path provided.');
       throw new Error('No file path provided');
@@ -190,32 +181,38 @@ export class BillsService {
       throw new Error(`File is empty: ${filePath}`);
     }
 
-    const jobId = path.basename(filePath); // Use the file name as the job ID
+    if (!jobId) {
+      jobId = path.basename(filePath);
+    }
+
+    const originalFileName = path.basename(filePath);
 
     this.logger.log(
       `Starting bill processing for file: ${filePath}, Job ID: ${jobId}`,
     );
     this.logger.log(`File size: ${fileSizeInBytes} bytes`);
 
-    try {
-      this.logger.log(
-        `Starting bill processing for file: ${filePath}, Job ID: ${jobId}`,
-      );
+    let savedInvoice: ProcessingInvoice | null = null;
 
-      // Notify front end that processing has started
+    try {
       this.billGateway.emitUpdate(jobId, {
         status: 'Processing',
         step: 'Started',
       });
 
-      // Step 1: Analyze the invoice and get the saved invoice
-      let savedInvoice = await this.analyzeService.analyzeWithAzure(filePath);
+      await this.eventLogService.logEvent(
+        jobId,
+        EventType.INFO,
+        `Started processing bill from file: ${originalFileName}`,
+        null,
+        originalFileName,
+      );
 
+      // Analysis Phase
+      savedInvoice = await this.analyzeService.analyzeWithAzure(filePath);
       if (!savedInvoice) {
         throw new Error('Saved invoice not found after analysis');
       }
-
-      // Reload the invoice with line_items relation
       savedInvoice = await this.invoiceRepository.findOne({
         where: { id: savedInvoice.id },
         relations: ['line_items'],
@@ -225,32 +222,39 @@ export class BillsService {
         `Fetched savedInvoice with ID: ${savedInvoice.id}, Job ID: ${jobId}`,
       );
 
-      // Notify front end that analysis is complete
       this.billGateway.emitUpdate(jobId, {
         status: 'Processing',
         step: 'AnalysisCompleted',
       });
 
-      // Step 2: Determine bill type
-      await this.billTypeService.determineBillType(savedInvoice);
+      // Determine Bill Type
+      // Emit an update before determining bill type
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Processing',
+        step: 'DeterminingBillType',
+        detail: 'Analyzing extracted data to determine bill type...',
+      });
+
+      await this.billTypeService.determineBillType(savedInvoice, jobId);
 
       this.logger.log(
         `Determined bill type for invoice ${savedInvoice.id}: ${savedInvoice.bill_type}`,
       );
 
-      // Notify front end about bill type
       this.billGateway.emitUpdate(jobId, {
         status: 'Processing',
         step: 'BillTypeDetermined',
         billType: savedInvoice.bill_type,
       });
 
-      // Fetch the TEM record based on the invoice
-      this.logger.log(
-        `Fetching TEM record for invoice ID: ${savedInvoice.id}, Customer ID: ${savedInvoice.customer_id}`,
-      );
-      const temRecord = await this.billTypeService.getTemRecord(savedInvoice);
+      // Fetch TEM record
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Processing',
+        step: 'FetchingTEMRecord',
+        detail: 'Fetching TEM record based on determined bill type...',
+      });
 
+      const temRecord = await this.billTypeService.getTemRecord(savedInvoice);
       if (!temRecord) {
         this.logger.error(
           `TEM record not found for invoice ID: ${savedInvoice.id}, Customer ID: ${savedInvoice.customer_id}`,
@@ -260,14 +264,32 @@ export class BillsService {
         );
       }
 
-      // Check for audit flag set during bill type determination
       if (savedInvoice.audit_flag) {
         this.logger.warn(`Invoice ${savedInvoice.id} flagged for audit.`);
-        // Notify front end that invoice is flagged for audit
+
         this.billGateway.emitUpdate(jobId, {
           status: 'Audit',
           step: 'FlaggedForAudit',
+          detail: 'Bill flagged for audit after bill type determination.',
         });
+
+        const newFilePath = await this.archiveService.moveToAudit(
+          filePath,
+          savedInvoice,
+          jobId, // Added jobId
+        );
+
+        savedInvoice.status = 'Audit';
+        savedInvoice.archived_file_path = newFilePath;
+        await this.invoiceRepository.save(savedInvoice);
+
+        await this.eventLogService.logEvent(
+          jobId,
+          EventType.WARNING,
+          `Invoice ${savedInvoice.id} flagged for audit.`,
+          null,
+          originalFileName,
+        );
 
         return {
           message: 'Invoice flagged for audit',
@@ -277,48 +299,86 @@ export class BillsService {
       }
 
       if (savedInvoice.bill_type === 'SLB') {
-        // Step 3: Validate the invoice for SLB
+        // Before Validation
+        this.billGateway.emitUpdate(jobId, {
+          status: 'Processing',
+          step: 'PreparingValidation',
+          detail: 'Preparing to validate the invoice data...',
+        });
+
         const validationResult = await this.validateInvoice(
           savedInvoice,
           jobId,
         );
 
-        // Step 4: Finalize and store the invoice
+        // Before Finalization
+        this.billGateway.emitUpdate(jobId, {
+          status: 'Processing',
+          step: 'PreparingFinalization',
+          detail: 'Validation done, proceeding to finalization...',
+        });
+
         const isFinalized = await this.finalizeInvoice(
           savedInvoice,
           validationResult,
           filePath,
-          temRecord, // Pass the temRecord here
+          temRecord,
+          jobId, // Added jobId
         );
 
-        // Adjust the response based on whether the invoice was saved or skipped due to duplicate
         let message = 'Bill processing completed';
         if (!isFinalized) {
           message = 'Duplicate bill detected, bill not processed';
         }
 
-        // Notify front end about the result
         this.billGateway.emitUpdate(jobId, {
           status: isFinalized ? 'Completed' : 'Duplicate',
           step: isFinalized ? 'ProcessingCompleted' : 'DuplicateDetected',
         });
 
+        await this.eventLogService.logEvent(
+          jobId,
+          EventType.INFO,
+          isFinalized
+            ? `Invoice ${savedInvoice.id} processed successfully.`
+            : `Duplicate invoice ${savedInvoice.id} detected, processing skipped.`,
+          null,
+          originalFileName,
+        );
         return {
           message: message,
           invoiceId: savedInvoice.id,
           status: savedInvoice.validation_status || 'Processed',
-          duplicate: !isFinalized, // Optional: indicate if the bill was a duplicate
+          duplicate: !isFinalized,
         };
       } else if (savedInvoice.bill_type === 'MLB') {
-        // MLB processing not implemented yet
         this.logger.warn(
           `Invoice ${savedInvoice.id} is MLB and will be processed later.`,
         );
-        // Notify front end about MLB status
+
         this.billGateway.emitUpdate(jobId, {
           status: 'MLB Pending',
           step: 'MLBProcessingPending',
+          detail: 'MLB detected, moving to audit for future processing...',
         });
+
+        const newFilePath = await this.archiveService.moveToAudit(
+          filePath,
+          savedInvoice,
+          jobId, // Added jobId
+        );
+
+        savedInvoice.status = 'MLB Pending';
+        savedInvoice.archived_file_path = newFilePath;
+        await this.invoiceRepository.save(savedInvoice);
+
+        await this.eventLogService.logEvent(
+          jobId,
+          EventType.INFO,
+          `Invoice ${savedInvoice.id} is MLB and will be processed later.`,
+          null,
+          originalFileName,
+        );
 
         return {
           message: 'MLB processing not implemented yet',
@@ -327,11 +387,19 @@ export class BillsService {
         };
       }
 
-      // Notify front end that processing is complete (should not reach here)
+      // If reached here, processing complete
       this.billGateway.emitUpdate(jobId, {
         status: 'Completed',
         step: 'ProcessingCompleted',
       });
+
+      await this.eventLogService.logEvent(
+        jobId,
+        EventType.INFO,
+        `Invoice ${savedInvoice.id} processing completed.`,
+        null,
+        originalFileName,
+      );
 
       return {
         message: 'Bill processing completed',
@@ -339,22 +407,52 @@ export class BillsService {
         status: savedInvoice.validation_status || 'Processed',
       };
     } catch (error) {
-      // Notify front end about the error
       this.billGateway.emitError(jobId, error.message);
       this.logger.error(
         `Error during bill processing (Job ID: ${jobId}):`,
         error,
       );
+
+      await this.eventLogService.logEvent(
+        jobId,
+        EventType.ERROR,
+        `Error processing bill: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`,
+        {
+          stack: error instanceof Error ? error.stack : undefined,
+        },
+        originalFileName,
+      );
+
+      if (savedInvoice) {
+        const newFilePath = await this.archiveService.moveToAudit(
+          filePath,
+          savedInvoice,
+          jobId, // Added jobId
+        );
+
+        savedInvoice.status = 'Error';
+        savedInvoice.error_message =
+          error instanceof Error ? error.message : 'Unknown error';
+        savedInvoice.archived_file_path = newFilePath;
+        await this.invoiceRepository.save(savedInvoice);
+      } else {
+        await this.archiveService.moveToAudit(
+          filePath,
+          {
+            customer_name: 'Unknown_Customer',
+            invoice_date: new Date(),
+          } as ProcessingInvoice,
+          jobId /* Added jobId */,
+        );
+      }
+
       throw error;
     }
   }
 
-  /**
-   * Validates the invoice using the ValidationService.
-   * @param invoice - The ProcessingInvoice entity to validate.
-   * @param jobId - The job ID for status updates.
-   * @returns The validation result.
-   */
+  // Added jobId to signature
   private async validateInvoice(
     invoice: ProcessingInvoice,
     jobId: string,
@@ -362,23 +460,21 @@ export class BillsService {
     this.logger.log(`Validating invoice ${invoice.id}, Job ID: ${jobId}`);
 
     try {
-      // Notify front end that validation has started
       this.billGateway.emitUpdate(jobId, {
         status: 'Validating',
         step: 'ValidationStarted',
       });
 
-      // Call the ValidationService to validate the invoice
-      const validationResult =
-        await this.validationService.validateInvoice(invoice);
+      const validationResult = await this.validationService.validateInvoice(
+        invoice,
+        jobId,
+      ); // pass jobId here once validationService is updated
 
-      // Log the validation result for debugging
       this.logger.debug(
         `ValidationResult for invoice ${invoice.id}:`,
         validationResult,
       );
 
-      // Update the invoice with validation results
       invoice.validation_status = validationResult.status || 'Unknown';
       invoice.validation_level = validationResult.level || 0;
       invoice.validation_errors = validationResult.errors || null;
@@ -387,24 +483,21 @@ export class BillsService {
         `Invoice ${invoice.id} validation status: ${invoice.validation_status}, Level: ${invoice.validation_level}`,
       );
 
-      // If validation failed, flag for audit
       if (validationResult.status === 'Fail') {
         invoice.audit_flag = true;
         this.logger.warn(
           `Invoice ${invoice.id} failed validation and is flagged for audit.`,
         );
-        // Notify front end about failed validation
         this.billGateway.emitUpdate(jobId, {
           status: 'ValidationFailed',
           step: 'ValidationFailed',
           errors: validationResult.errors,
         });
       } else {
-        invoice.audit_flag = false; // Ensure audit_flag is set to false when validation passes
+        invoice.audit_flag = false;
         this.logger.log(
           `Invoice ${invoice.id} passed validation with level ${invoice.validation_level}`,
         );
-        // Notify front end about passed validation
         this.billGateway.emitUpdate(jobId, {
           status: 'ValidationPassed',
           step: 'ValidationPassed',
@@ -412,10 +505,8 @@ export class BillsService {
         });
       }
 
-      // Save the updated invoice
       await this.invoiceRepository.save(invoice);
 
-      // Optionally, update line items with categories from validationResult.LineItems
       if (validationResult.LineItems && validationResult.LineItems.length > 0) {
         for (const itemData of validationResult.LineItems) {
           const lineItem = invoice.line_items.find(
@@ -424,11 +515,9 @@ export class BillsService {
               parseFloat(item.amount.toString()) === itemData.Amount,
           );
           if (lineItem) {
-            // Update line item with category and subcategory
             lineItem.category = itemData.Category || null;
             lineItem.subcategory = itemData.SubCategory || null;
             await this.lineItemRepository.save(lineItem);
-            // Log the updated line item
             this.logger.log(
               `Updated line item ${lineItem.id} with category ${lineItem.category} and subcategory ${lineItem.subcategory}`,
             );
@@ -439,42 +528,59 @@ export class BillsService {
       return validationResult;
     } catch (error) {
       this.logger.error(`Validation error for invoice ${invoice.id}:`, error);
-      // Notify front end about validation error
       this.billGateway.emitError(jobId, `Validation error: ${error.message}`);
       throw error;
     }
   }
 
-  /**
-   * Finalizes the invoice by moving data to permanent tables and enriching it.
-   * @param invoice - The ProcessingInvoice entity.
-   * @param validationResult - The result from the validation step.
-   * @param filePath - The file path of the original PDF (for archiving).
-   * @returns A boolean indicating whether the invoice was saved (true) or skipped due to duplicate (false).
-   */
+  // Added jobId to signature
   private async finalizeInvoice(
     invoice: ProcessingInvoice,
     validationResult: ValidationResult,
     filePath: string,
     temRecord: TemMasterView,
+    jobId: string, // added jobId
   ): Promise<boolean> {
     try {
       this.logger.log(`Finalizing invoice ${invoice.id}`);
 
-      // Step 1: Enrich data and find or create related entities
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Processing',
+        step: 'Finalization',
+        detail: 'Enriching data and moving invoice to permanent storage...',
+      });
+
       const vendor = await this.findOrCreateVendor(
         validationResult.ProcessedData,
         temRecord,
       );
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Processing',
+        step: 'Finalization',
+        detail: 'Vendor found/created, now handling customer...',
+      });
+
       const customer = await this.findOrCreateCustomer(
         validationResult.ProcessedData,
         temRecord,
       );
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Processing',
+        step: 'Finalization',
+        detail: 'Customer found/created, now handling location...',
+      });
+
       const location = await this.findOrCreateLocation(
         validationResult.ProcessedData,
         customer,
         temRecord,
       );
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Processing',
+        step: 'Finalization',
+        detail: 'Location found/created, now handling account...',
+      });
+
       const account = await this.findOrCreateAccount(
         validationResult.ProcessedData,
         vendor,
@@ -484,7 +590,12 @@ export class BillsService {
         temRecord,
       );
 
-      // Step 2: Create TemBill
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Processing',
+        step: 'Finalization',
+        detail: 'Creating TemBill and line items...',
+      });
+
       const temBill = new TemBill();
       temBill.account = account;
       temBill.account_id = account.id;
@@ -501,10 +612,9 @@ export class BillsService {
       temBill.audit_flag = invoice.audit_flag;
       temBill.status = 'Processed';
       temBill.notes = validationResult.ValidationResult?.Notes;
-      temBill.archived_file_path = null; // This will be set after archiving
+      temBill.archived_file_path = null;
       temBill.fingerprint = this.generateFingerprint(invoice, account);
 
-      // Step 3: Prevent duplicates using fingerprint
       const existingBill = await this.temBillRepository.findOne({
         where: { fingerprint: temBill.fingerprint },
       });
@@ -513,10 +623,14 @@ export class BillsService {
         this.logger.warn(
           `Duplicate bill detected for fingerprint ${temBill.fingerprint}. Skipping save.`,
         );
-        return false; // Indicate that the bill was not saved due to duplicate
+        this.billGateway.emitUpdate(jobId, {
+          status: 'Duplicate',
+          step: 'DuplicateDetected',
+          detail: 'Duplicate bill detected, finalization skipped.',
+        });
+        return false;
       }
 
-      // Step 4: Create TemBillLineItems
       const temBillLineItems: TemBillLineItem[] = [];
       if (validationResult.LineItems && validationResult.LineItems.length > 0) {
         for (const lineItemData of validationResult.LineItems) {
@@ -530,32 +644,41 @@ export class BillsService {
         }
       }
 
-      // Associate line items with the bill
       temBill.line_items = temBillLineItems;
-
-      // Step 5: Save TemBill and TemBillLineItems
       await this.temBillRepository.save(temBill);
 
       this.logger.log(
         `Invoice ${invoice.id} finalized and saved to tem_bills.`,
       );
 
-      // Step 6: Archive the bill PDF
-      await this.archiveBill(temBill, filePath);
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Processing',
+        step: 'Finalization',
+        detail: 'Archiving bill PDF...',
+      });
 
-      return true; // Indicate that the bill was successfully saved
+      const newFilePath = await this.archiveService.archiveBill(
+        temBill,
+        filePath,
+        jobId, // Pass jobId
+      );
+
+      temBill.archived_file_path = newFilePath;
+      await this.temBillRepository.save(temBill);
+
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Processing',
+        step: 'Finalization',
+        detail: 'Finalization complete.',
+      });
+
+      return true;
     } catch (error) {
       this.logger.error(`Error finalizing invoice ${invoice.id}:`, error);
       throw error;
     }
   }
 
-  /**
-   * Generates a fingerprint for the bill to prevent duplicates.
-   * @param invoice - The ProcessingInvoice entity.
-   * @param account - The TemAccount entity.
-   * @returns A unique fingerprint string.
-   */
   private generateFingerprint(
     invoice: ProcessingInvoice,
     account: TemAccount,
@@ -567,16 +690,11 @@ export class BillsService {
       .digest('hex');
   }
 
-  /**
-   * Archives the bill PDF to the designated folder.
-   * @param temBill - The TemBill entity.
-   * @param originalFilePath - The original file path of the uploaded PDF.
-   */
+  // NOTE: We have not altered this archiveBill method since we will update it later when we handle archiveService similarly.
   private async archiveBill(
     temBill: TemBill,
     originalFilePath: string,
   ): Promise<void> {
-    // Build the archive directory path
     const customerName = this.sanitizeFileName(temBill.account.customer.name);
     const locationName = temBill.account.location
       ? this.sanitizeFileName(temBill.account.location.name)
@@ -592,7 +710,7 @@ export class BillsService {
       .padStart(2, '0')}`;
 
     const archiveDir = path.join(
-      '/path/to/archives/', // Replace with your actual archive root path
+      '/path/to/archives/',
       customerName,
       locationName,
       carrierName,
@@ -608,24 +726,14 @@ export class BillsService {
 
     fs.renameSync(originalFilePath, newFilePath);
 
-    // Update TemBill with the archived file path
     temBill.archived_file_path = newFilePath;
     await this.temBillRepository.save(temBill);
   }
 
-  /**
-   * Sanitizes a file or directory name by removing or replacing illegal characters.
-   * @param name - The original name to sanitize.
-   * @returns A sanitized file or directory name.
-   */
   private sanitizeFileName(name: string): string {
     return name.replace(/[^a-z0-9]/gi, '_');
   }
 
-  /**
-   * Retrieves all processed invoices from the database.
-   * @returns An array of processed invoices.
-   */
   async getProcessedInvoices(): Promise<ProcessingInvoice[]> {
     try {
       const invoices = await this.invoiceRepository.find({
@@ -646,17 +754,15 @@ export class BillsService {
   ): Promise<Location> {
     const cissdmLocationId = temRecord.id_location;
 
-    // Attempt to find the location by cissdm ID
     let location = await this.locationRepository.findOne({
       where: { cissdm_id: cissdmLocationId },
     });
 
     if (location) {
       this.logger.log(`Existing location found: ${location.name}`);
-      return location; // Location exists, return it
+      return location;
     }
 
-    // Location doesn't exist, fetch from cissdm database
     const oldLocation = await this.cissdmLocationRepository.findOne({
       where: { id: cissdmLocationId },
     });
@@ -667,13 +773,11 @@ export class BillsService {
       );
     }
 
-    // Map fields based on your mappings
     location = new Location();
     location.customer = customer;
     location.customer_id = customer.id;
     location.name = oldLocation.name || 'Unknown Location';
 
-    // Store the original cissdm location ID
     location.cissdm_id = cissdmLocationId;
     location.site_number = oldLocation.siteNumber || null;
     location.address = {
@@ -701,7 +805,6 @@ export class BillsService {
     location.location_notes = oldLocation.location_notes || null;
     location.building_type = oldLocation.building_type || null;
 
-    // Save the new location to the local database
     await this.locationRepository.save(location);
     this.logger.log(`Created new location: ${location.name}`);
 
@@ -712,80 +815,72 @@ export class BillsService {
     processedData: any,
     temRecord: TemMasterView,
   ): Promise<TemVendor> {
-    const temVendorIdString = temRecord.id_vendor; // This is a string
+    const cissdmProviderId = temRecord.id_provider;
 
-    // Convert to number for use in new TemVendor entity
-    const temVendorId = parseInt(temVendorIdString, 10);
-
-    // Validate the parsed value
-    if (isNaN(temVendorId)) {
-      throw new Error(`Invalid vendor ID: ${temRecord.id_vendor}`);
-    }
-
-    // Attempt to find the vendor in the local database by tem_vendor_id
-    let vendor = await this.temVendorRepository.findOne({
-      where: { tem_vendor_id: temVendorId },
-    });
-
-    if (vendor) {
-      this.logger.log(`Existing vendor found: ${vendor.name}`);
-      return vendor; // Vendor exists, return it
-    }
-
-    // Vendor doesn't exist, fetch from tem database using the original string ID
-    const oldVendor = await this.temVendorOldRepository.findOne({
-      where: { id: temVendorIdString }, // Pass temVendorIdString (string) as id
-    });
-
-    if (!oldVendor) {
+    if (!cissdmProviderId) {
       throw new Error(
-        `Vendor not found in tem database for ID: ${temVendorIdString}`,
+        `No provider ID found in TEM record for accountNumber: ${temRecord.accountNumber}`,
       );
     }
 
-    // Map fields
+    const provider = await this.cissdmProviderRepository.findOne({
+      where: { id: cissdmProviderId },
+    });
+
+    if (!provider) {
+      throw new Error(
+        `Provider not found in cissdm database for ID: ${cissdmProviderId}`,
+      );
+    }
+
+    const carrierName = provider.carriername || 'Unknown Vendor';
+
+    let vendor = await this.temVendorRepository.findOne({
+      where: { name: carrierName },
+    });
+
+    if (vendor) {
+      this.logger.log(
+        `Existing vendor found: ${vendor.name} (ID: ${vendor.id})`,
+      );
+      return vendor;
+    }
+
     vendor = new TemVendor();
-    vendor.name =
-      oldVendor.nameOnCheck ||
-      oldVendor.name ||
-      processedData.VendorName ||
-      'Unknown Vendor';
-    vendor.name_on_check = oldVendor.nameOnCheck || null;
+    vendor.name = carrierName;
+    vendor.name_on_check = temRecord.nameOnCheck || null;
+    vendor.phone = provider.telephone || null;
+    vendor.is_active = true;
+
     vendor.address = {
-      address1: oldVendor.address1 || null,
-      city: oldVendor.addressCity || null,
-      state: oldVendor.addressState || null,
-      zip: oldVendor.addressZip || null,
+      address1: temRecord.address1 || null,
+      address2: temRecord.address2 || null,
+      city: temRecord.addressCity || null,
+      state: temRecord.addressState || null,
+      zip: temRecord.addressZip || null,
     };
-    vendor.is_active = true; // Assuming new vendors are active
 
-    // Store the original tem vendor ID as a number
-    vendor.tem_vendor_id = temVendorId;
-
-    // Save the new vendor
     await this.temVendorRepository.save(vendor);
-    this.logger.log(`Created new vendor: ${vendor.name}`);
+    this.logger.log(`Created new vendor: ${vendor.name} (ID: ${vendor.id})`);
 
     return vendor;
   }
+
   private async findOrCreateCustomer(
     processedData: any,
     temRecord: TemMasterView,
   ): Promise<TemCustomer> {
-    // The original customer ID from the cissdm database
     const cissdmCustomerId = temRecord.id_customer;
 
-    // Attempt to find the customer by cissdm ID
     let customer = await this.temCustomerRepository.findOne({
       where: { cissdm_id: cissdmCustomerId },
     });
 
     if (customer) {
       this.logger.log(`Existing customer found: ${customer.name}`);
-      return customer; // Customer exists, return it
+      return customer;
     }
 
-    // Customer doesn't exist in local database, fetch from cissdm database
     const oldCustomer = await this.cissdmCustomerRepository.findOne({
       where: { id: cissdmCustomerId },
     });
@@ -796,17 +891,13 @@ export class BillsService {
       );
     }
 
-    // Map fields based on your mappings
     customer = new TemCustomer();
     customer.name =
       oldCustomer.name || processedData.CustomerName || 'Unknown Customer';
     customer.abbreviation = oldCustomer.abbreviation || null;
     customer.is_active = oldCustomer.isActive === 1;
-
-    // Store the original cissdm customer ID
     customer.cissdm_id = cissdmCustomerId;
 
-    // Save the new customer to the local database
     await this.temCustomerRepository.save(customer);
     this.logger.log(`Created new customer: ${customer.name}`);
 
@@ -824,7 +915,6 @@ export class BillsService {
     const accountNumber =
       processedData.CustomerId || temRecord.accountNumber || 'Unknown Account';
 
-    // Attempt to find the account by account number and vendor
     let account = await this.temAccountRepository.findOne({
       where: {
         account_number: accountNumber,
@@ -835,10 +925,9 @@ export class BillsService {
 
     if (account) {
       this.logger.log(`Existing account found: ${account.account_number}`);
-      return account; // Account exists, return it
+      return account;
     }
 
-    // Account doesn't exist, map fields from temRecord
     account = new TemAccount();
     account.account_number = accountNumber;
     account.vendor = vendor;
@@ -853,7 +942,6 @@ export class BillsService {
     account.pay_type = temRecord.payType || null;
     account.multiple_locations = temRecord.multipleLocations === 1;
 
-    // Map additional fields
     account.name_on_check = temRecord.nameOnCheck || null;
     account.expected_amount = temRecord.expectedAmount || null;
     account.provider_name = temRecord.providerName || null;
@@ -869,7 +957,6 @@ export class BillsService {
     account.last_amount = temRecord.lastAmount || null;
     account.vendor_balance = temRecord.vendorBalance || null;
 
-    // Save the new account to the local database
     await this.temAccountRepository.save(account);
     this.logger.log(`Created new account: ${account.account_number}`);
 
@@ -877,15 +964,122 @@ export class BillsService {
   }
 
   async getTemRecord(invoice: ProcessingInvoice): Promise<TemMasterView> {
-    // Implement logic to find the corresponding TEM record
-    // For example, match based on account number or customer ID
     const accountNumber =
-      invoice.customer_id || invoice.customer_name || invoice.customer_id;
+      invoice.invoice_id || invoice.customer_id || invoice.customer_name;
+
+    this.logger.log(
+      `Invoice ID: ${invoice.id}, Account Number: ${accountNumber}`,
+    );
 
     const temRecord = await this.temMasterViewRepository.findOne({
       where: { accountNumber: accountNumber },
     });
 
+    if (!temRecord) {
+      this.logger.error(
+        `No TEM record found for Account Number: ${accountNumber}`,
+      );
+      throw new Error(
+        `TEM record not found for Account Number: ${accountNumber}`,
+      );
+    } else {
+      this.logger.log(`Found TEM record for Account Number: ${accountNumber}`);
+    }
+
     return temRecord;
+  }
+
+  async getProcessingQueue(): Promise<TemBill[]> {
+    this.logger.log('Fetching Processing Queue...');
+    const queue = await this.temBillRepository.find({
+      where: { status: 'Processing' },
+      order: { created_at: 'DESC' },
+    });
+    this.logger.log(`Processing Queue Retrieved: ${queue.length} bills.`);
+    return queue;
+  }
+
+  async getAuditBills(): Promise<ProcessingInvoice[]> {
+    try {
+      const auditBills = await this.invoiceRepository.find({
+        where: { status: 'Audit' },
+        relations: ['line_items'],
+        order: { created_at: 'DESC' },
+      });
+      return auditBills;
+    } catch (error) {
+      this.logger.error('Error fetching audit bills:', error);
+      throw error;
+    }
+  }
+
+  async getProcessedRecent(hours: number): Promise<TemBill[]> {
+    this.logger.log(`Fetching Processed Bills from the last ${hours} hours...`);
+
+    const since = new Date();
+    since.setHours(since.getHours() - hours);
+
+    const processed = await this.temBillRepository.find({
+      where: {
+        status: 'Processed',
+        updated_at: MoreThan(since),
+      },
+      relations: [
+        'account',
+        'account.customer',
+        'account.location',
+        'account.vendor',
+        'line_items',
+      ],
+      order: { updated_at: 'DESC' },
+    });
+
+    this.logger.log(`Processed Bills Retrieved: ${processed.length} bills.`);
+
+    return processed;
+  }
+
+  async getTotalProcessedBills(): Promise<number> {
+    const count = await this.temBillRepository.count({
+      where: { status: 'Processed' },
+    });
+    return count;
+  }
+
+  async getValidationPassRate(): Promise<number> {
+    const totalProcessed = await this.getTotalProcessedBills();
+    const totalPassedValidation = await this.temBillRepository.count({
+      where: {
+        status: 'Processed',
+        validation_status: 'Pass',
+      },
+    });
+    return totalProcessed > 0
+      ? (totalPassedValidation / totalProcessed) * 100
+      : 0;
+  }
+
+  async countAuditBills(): Promise<number> {
+    const count = await this.invoiceRepository.count({
+      where: { status: 'Audit' },
+    });
+    return count;
+  }
+
+  async getBillById(id: number): Promise<TemBill | null> {
+    this.logger.log(`Fetching Bill with ID: ${id}`);
+
+    const bill = await this.temBillRepository.findOne({
+      where: { id },
+      relations: [
+        'account',
+        'account.customer',
+        'account.location',
+        'account.vendor',
+        'line_items',
+      ],
+    });
+
+    return bill || null;
   }
 }

@@ -27,6 +27,8 @@ export class JobsProcessor {
       const job = await this.jobsService.getNextPendingJob();
       if (job) {
         this.processJob(job);
+      } else {
+        break; // No more pending jobs
       }
     }
   }
@@ -39,13 +41,13 @@ export class JobsProcessor {
     this.logger.log(`Processing job ${job.id} of type ${job.type}`);
 
     try {
-      // Update job status to IN_PROGRESS
-      await this.jobsService.updateJobStatus(job.id, JobStatus.IN_PROGRESS, '');
+      // Job status is already set to IN_PROGRESS in getNextPendingJob()
 
       // Process the job based on its type
       if (job.type === 'process_bill') {
         const analysisResult = await this.billsService.processBill(
           job.payload.filePath,
+          job.id, // Passing jobId
         );
 
         // Update job status to COMPLETED

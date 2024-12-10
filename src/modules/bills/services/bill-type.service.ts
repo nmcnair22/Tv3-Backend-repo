@@ -8,6 +8,9 @@ import { Repository } from 'typeorm';
 import { ProcessingInvoice } from '../entities/processing-invoice.entity';
 import { TemMasterView } from '../entities/tem-master-view.entity';
 
+// Import the utility function
+import { cleanAccountNumber } from '../../../utils/account-number.util';
+
 @Injectable()
 export class BillTypeService {
   private readonly logger = new Logger(BillTypeService.name);
@@ -28,18 +31,26 @@ export class BillTypeService {
       return;
     }
 
-    // Clean the customer_id (remove dashes and spaces)
-    const cleanedCustomerId = invoice.customer_id.replace(/[-\s]/g, '');
+    // Clean the customer_id
+    const cleanedCustomerId = cleanAccountNumber(invoice.customer_id);
 
-    console.log(`Cleaned Customer ID: ${cleanedCustomerId}`);
+    this.logger.log(`Cleaned Customer ID: ${cleanedCustomerId}`);
 
     // Lookup in the TEM database
     const temRecord = await this.temMasterViewRepository.findOne({
       where: { accountNumber: cleanedCustomerId },
     });
 
-    // Print the TEM record retrieved
-    console.log('TEM Record:', temRecord);
+    // Log the TEM record retrieved
+    if (temRecord) {
+      this.logger.log(
+        `TEM Record found for Account Number: ${cleanedCustomerId}`,
+      );
+    } else {
+      this.logger.warn(
+        `TEM Record not found for Account Number: ${cleanedCustomerId}`,
+      );
+    }
 
     if (temRecord) {
       if (temRecord.multipleLocations === 0) {
@@ -66,25 +77,18 @@ export class BillTypeService {
    * @param invoice - The ProcessingInvoice entity.
    * @returns The TemMasterView record or null if not found.
    */
-  async getTemRecord(
+  public async getTemRecord(
     invoice: ProcessingInvoice,
   ): Promise<TemMasterView | null> {
     try {
       // Extract and clean the account number from the invoice
       const rawAccountNumber = invoice.customer_id || '';
 
-      // Remove spaces and non-digit characters
-      const cleanedAccountNumber = rawAccountNumber
-        .replace(/\s+/g, '')
-        .replace(/\D/g, '');
+      // Clean the account number
+      const cleanedAccountNumber = cleanAccountNumber(rawAccountNumber);
 
       this.logger.log(`Raw Account Number: ${rawAccountNumber}`);
       this.logger.log(`Cleaned Account Number: ${cleanedAccountNumber}`);
-
-      // Log the query being made
-      this.logger.log(
-        `Searching for TEM record with Account Number: ${cleanedAccountNumber}`,
-      );
 
       // Query the TEM master view for the cleaned account number
       const temRecord = await this.temMasterViewRepository.findOne({

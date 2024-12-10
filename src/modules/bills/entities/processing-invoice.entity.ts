@@ -4,11 +4,14 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
+  ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 import { ProcessingInvoiceLineItem } from './processing-invoice-line-item.entity';
+import { TemAccount } from './tem-account.entity';
 
 @Entity('processing_invoices')
 export class ProcessingInvoice {
@@ -107,6 +110,15 @@ export class ProcessingInvoice {
   @Column({ type: 'json', nullable: true })
   validation_errors: any; // Adjusted to 'any' to match JSON data type
 
+  @Column({ nullable: true })
+  status: string; // e.g., 'Processed', 'Error', 'Audit', 'MLB Pending'
+
+  @Column({ nullable: true })
+  error_message: string;
+
+  @Column({ nullable: true })
+  archived_file_path: string;
+
   // Timestamps
   @CreateDateColumn({ type: 'timestamp' })
   created_at: Date;
@@ -118,4 +130,11 @@ export class ProcessingInvoice {
     cascade: true,
   })
   line_items: ProcessingInvoiceLineItem[];
+
+  @ManyToOne(() => TemAccount)
+  @JoinColumn({ name: 'account_id' })
+  account: TemAccount;
+
+  @Column({ nullable: true })
+  account_id: number;
 }
