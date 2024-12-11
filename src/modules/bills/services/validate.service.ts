@@ -7,6 +7,10 @@ import axios from 'axios';
 import { ProcessingInvoice } from '../entities/processing-invoice.entity';
 import { ValidationResult } from '../interfaces/validation-result.interface';
 
+import { BillGateway } from '../bill.gateway';
+import { EventType } from '../entities/event-log.entity';
+import { EventLogService } from './event-log.service';
+
 @Injectable()
 export class ValidationService {
   private readonly logger = new Logger(ValidationService.name);
@@ -14,7 +18,11 @@ export class ValidationService {
   private readonly openaiApiEndpoint: string = 'https://api.openai.com/v1';
   private readonly assistantId: string;
 
-  constructor(private configService: ConfigService) {
+  constructor(
+    private configService: ConfigService,
+    private readonly billGateway: BillGateway,
+    private readonly eventLogService: EventLogService,
+  ) {
     this.openaiApiKey = this.configService.get<string>('OPENAI_API_KEY');
     this.assistantId = this.configService.get<string>(
       'OPENAI_ASSISTANT_ID_VALIDATION',
@@ -29,38 +37,118 @@ export class ValidationService {
     }
   }
 
-  async validateInvoice(invoice: ProcessingInvoice): Promise<ValidationResult> {
+  // Updated to accept jobId
+  async validateInvoice(
+    invoice: ProcessingInvoice,
+    jobId: string,
+  ): Promise<ValidationResult> {
     // Prepare the invoice data
     const invoiceData = this.buildInvoiceData(invoice);
 
     try {
+      // Notify that validation is starting
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Validating',
+        step: 'ValidationStarted',
+        detail: 'Starting validation process with the assistant...',
+      });
+      await this.eventLogService.logEvent(
+        jobId,
+        EventType.INFO,
+        'Validation started.',
+      );
+
       // Step 1: Create a new thread
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Validating',
+        step: 'ValidationInProgress',
+        detail: 'Creating thread for assistant interaction...',
+      });
       const threadId = await this.createThread();
 
       // Step 2: Add a message to the thread with the invoice data
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Validating',
+        step: 'ValidationInProgress',
+        detail: 'Sending invoice data to assistant...',
+      });
       await this.addMessageToThread(threadId, invoiceData);
 
       // Step 3: Run the assistant on the thread
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Validating',
+        step: 'ValidationInProgress',
+        detail: 'Running validation assistant...',
+      });
       const runId = await this.runAssistant(threadId);
 
       // Step 4: Monitor the run until completion
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Validating',
+        step: 'ValidationInProgress',
+        detail: 'Waiting for assistant response...',
+      });
       await this.monitorRun(threadId, runId);
 
       // Step 5: Retrieve the assistant's response
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Validating',
+        step: 'ValidationInProgress',
+        detail: 'Retrieving assistant’s validation response...',
+      });
       const assistantResponse = await this.getAssistantResponse(threadId);
 
       // Step 6: Parse the assistant's response into ValidationResult
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Validating',
+        step: 'ValidationInProgress',
+        detail: 'Parsing validation results...',
+      });
       const validationResult = this.parseValidationResponse(assistantResponse);
+
+      // Based on validation result, emit and log events
+      if (validationResult.status === 'Fail') {
+        this.billGateway.emitUpdate(jobId, {
+          status: 'ValidationFailed',
+          step: 'ValidationFailed',
+          detail: 'Validation failed. Invoice flagged for audit.',
+          errors: validationResult.errors,
+        });
+        await this.eventLogService.logEvent(
+          jobId,
+          EventType.WARNING,
+          'Validation failed.',
+          { errors: validationResult.errors },
+        );
+      } else {
+        this.billGateway.emitUpdate(jobId, {
+          status: 'ValidationPassed',
+          step: 'ValidationPassed',
+          level: validationResult.level,
+          detail: 'Validation passed successfully.',
+        });
+        await this.eventLogService.logEvent(
+          jobId,
+          EventType.INFO,
+          `Validation passed at level ${validationResult.level}.`,
+        );
+      }
 
       return validationResult;
     } catch (error) {
       this.logger.error(`OpenAI validation error: ${error.message}`);
+      this.billGateway.emitError(jobId, `Validation error: ${error.message}`);
+      await this.eventLogService.logEvent(
+        jobId,
+        EventType.ERROR,
+        'Validation process encountered an error.',
+        { error: error.message },
+      );
       throw error;
     }
   }
 
   private buildInvoiceData(invoice: ProcessingInvoice): string {
-    // Format addresses
     const formatAddress = (address: any): string => {
       if (!address) return '';
       const parts = [];
@@ -71,7 +159,6 @@ export class ValidationService {
       return parts.join(', ');
     };
 
-    // Construct the invoice data object
     const invoiceData = {
       invoice: {
         id: invoice.id,
@@ -93,7 +180,6 @@ export class ValidationService {
           id: item.id,
           description: item.description,
           amount: item.amount,
-          // Include other fields as necessary
         })) || [],
     };
 
@@ -211,7 +297,6 @@ ${invoiceData}
       throw new Error(`Assistant run failed with status: ${status}`);
     }
 
-    // Log successful completion with the actual status
     this.logger.debug(`Run completed successfully with status: ${status}`);
   }
 
@@ -237,19 +322,15 @@ ${invoiceData}
         throw new Error('No assistant responses found.');
       }
 
-      // Assuming the last assistant message is the one we need
       const assistantContent: ContentItem[] =
         assistantMessages[assistantMessages.length - 1].content;
 
-      // Extract text content
       const assistantText = assistantContent
         .filter((contentItem: ContentItem) => contentItem.type === 'text')
         .map((contentItem: ContentItem) => contentItem.text.value)
         .join(' ');
 
       this.logger.debug('Assistant response:', assistantText);
-
-      // Log the raw assistant response
       console.log('Raw Assistant Response:', assistantText);
 
       return assistantText;
@@ -264,10 +345,8 @@ ${invoiceData}
 
   private parseValidationResponse(responseText: string): ValidationResult {
     try {
-      // Log the raw response for debugging
       this.logger.debug('Raw assistant response:', responseText);
 
-      // Extract JSON from the assistant's response
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
         throw new Error("Could not find JSON in the assistant's response.");
@@ -302,18 +381,16 @@ ${invoiceData}
     }
   }
 }
-// Define ContentItem and Message interfaces
+
 interface ContentItem {
   type: string;
   text: {
     value: string;
     annotations: any[];
   };
-  // Include other properties if necessary
 }
 
 interface Message {
   role: string;
   content: ContentItem[];
-  // Include other properties if necessary
 }

@@ -4,10 +4,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// Import ConfigService if using @nestjs/config
 import { ConfigService } from '@nestjs/config';
+import { BillGateway } from '../bill.gateway';
+import { EventType } from '../entities/event-log.entity';
 import { ProcessingInvoice } from '../entities/processing-invoice.entity';
 import { TemBill } from '../entities/tem-bill.entity';
+import { EventLogService } from './event-log.service';
 
 @Injectable()
 export class ArchiveService {
@@ -16,25 +18,23 @@ export class ArchiveService {
   private readonly auditRootPath: string;
 
   constructor(
-    private readonly configService: ConfigService, // Inject ConfigService
+    private readonly configService: ConfigService,
+    private readonly billGateway: BillGateway,
+    private readonly eventLogService: EventLogService,
   ) {
-    // Load paths from environment variables or use default values
     this.archiveRootPath = this.configService.get<string>(
       'ARCHIVE_ROOT_PATH',
-      path.resolve(process.cwd(), 'Archive'), // Updated default value
+      path.resolve(process.cwd(), 'Archive'),
     );
 
     this.auditRootPath = this.configService.get<string>(
       'AUDIT_ROOT_PATH',
-      path.resolve(process.cwd(), 'Audit'), // Updated default value
+      path.resolve(process.cwd(), 'Audit'),
     );
 
     this.ensureDirectories();
   }
 
-  /**
-   * Ensures that the archive and audit directories exist.
-   */
   private ensureDirectories() {
     try {
       fs.mkdirSync(this.archiveRootPath, { recursive: true });
@@ -53,13 +53,29 @@ export class ArchiveService {
    * Archives the bill PDF to the designated folder.
    * @param temBill - The TemBill entity.
    * @param originalFilePath - The original file path of the uploaded PDF.
+   * @param jobId - The job ID for logging and emitting updates.
    */
   public async archiveBill(
     temBill: TemBill,
     originalFilePath: string,
+    jobId: string,
   ): Promise<string> {
     try {
-      // Build the archive directory path
+      // Emit update before archiving starts
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Processing',
+        step: 'Archiving',
+        detail: 'Archiving bill PDF...',
+      });
+
+      // Log event that archiving is starting
+      await this.eventLogService.logEvent(
+        jobId,
+        EventType.INFO,
+        'Starting to archive bill PDF.',
+        { temBillId: temBill.id, originalFilePath },
+      );
+
       const customerName = this.sanitizeFileName(temBill.account.customer.name);
       const locationName = temBill.account.location
         ? this.sanitizeFileName(temBill.account.location.name)
@@ -93,24 +109,65 @@ export class ArchiveService {
 
       this.logger.log(`Archived bill to ${newFilePath}`);
 
+      // Emit update after archiving completes
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Processing',
+        step: 'ArchivingCompleted',
+        detail: 'Bill archived successfully.',
+      });
+
+      // Log event for completed archiving
+      await this.eventLogService.logEvent(
+        jobId,
+        EventType.INFO,
+        'Bill archived successfully.',
+        { temBillId: temBill.id, archivedPath: newFilePath },
+      );
+
       return newFilePath;
     } catch (error) {
       this.logger.error('Error archiving bill:', error);
+      this.billGateway.emitError(
+        jobId,
+        `Error archiving bill: ${error.message}`,
+      );
+      await this.eventLogService.logEvent(
+        jobId,
+        EventType.ERROR,
+        'Error encountered during archiving.',
+        { error: error.message },
+      );
       throw error;
     }
   }
 
   /**
    * Moves the bill to the audit directory for further review.
-   * @param originalFilePath - Path to the file to archive.
+   * @param originalFilePath - Path to the file to move.
    * @param invoice - The ProcessingInvoice entity.
+   * @param jobId - The job ID for logging and updating.
    */
   public async moveToAudit(
     originalFilePath: string,
     invoice: ProcessingInvoice,
+    jobId: string,
   ): Promise<string> {
     try {
-      // Build the audit directory path
+      // Emit update before moving to audit
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Audit',
+        step: 'MovingToAudit',
+        detail: 'Moving bill to audit folder...',
+      });
+
+      // Log event about moving to audit
+      await this.eventLogService.logEvent(
+        jobId,
+        EventType.INFO,
+        'Moving bill to audit folder.',
+        { invoiceId: invoice.id, originalFilePath },
+      );
+
       const customerName = this.sanitizeFileName(
         invoice.customer_name || 'Unknown_Customer',
       );
@@ -136,18 +193,38 @@ export class ArchiveService {
 
       this.logger.log(`Moved bill to audit folder: ${newFilePath}`);
 
+      // Emit update after moving to audit
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Audit',
+        step: 'MovedToAudit',
+        detail: 'Bill moved to audit folder successfully.',
+      });
+
+      // Log event for completed move to audit
+      await this.eventLogService.logEvent(
+        jobId,
+        EventType.INFO,
+        'Bill moved to audit folder successfully.',
+        { invoiceId: invoice.id, auditPath: newFilePath },
+      );
+
       return newFilePath;
     } catch (error) {
       this.logger.error('Error moving bill to audit folder:', error);
+      this.billGateway.emitError(
+        jobId,
+        `Error moving bill to audit folder: ${error.message}`,
+      );
+      await this.eventLogService.logEvent(
+        jobId,
+        EventType.ERROR,
+        'Error encountered while moving bill to audit folder.',
+        { error: error.message },
+      );
       throw error;
     }
   }
 
-  /**
-   * Sanitizes a file or directory name by removing or replacing illegal characters.
-   * @param name - The original name to sanitize.
-   * @returns A sanitized file or directory name.
-   */
   private sanitizeFileName(name: string): string {
     return name.replace(/[^a-z0-9]/gi, '_');
   }

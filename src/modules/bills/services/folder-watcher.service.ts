@@ -6,36 +6,38 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { JobPriority } from '../../bills/entities/job.entity';
 import { JobsService } from '../../jobs/jobs.service';
+import { BillGateway } from '../bill.gateway';
+import { BillsService } from '../bills.service';
 
 @Injectable()
 export class FolderWatcherService {
   private readonly logger = new Logger(FolderWatcherService.name);
 
-  constructor(private readonly jobsService: JobsService) {
+  constructor(
+    private readonly jobsService: JobsService,
+    private readonly billsService: BillsService,
+    private readonly billGateway: BillGateway,
+  ) {
     this.logger.log('FolderWatcherService initialized');
     this.initializeWatcher();
   }
 
   private initializeWatcher() {
-    // Use process.cwd() to get the current working directory
     const folderPath = path.join(process.cwd(), 'Inbox');
 
-    // Log folderPath and __dirname for debugging
-    this.logger.log(`__dirname: ${__dirname}`);
     this.logger.log(`Monitoring folder: ${folderPath}`);
 
-    // Ensure the Inbox folder exists
     if (!fs.existsSync(folderPath)) {
       this.logger.error(`Inbox folder does not exist: ${folderPath}`);
       return;
     }
 
-    // Process existing files in the directory (optional)
+    // Optional: Process existing files at startup
     this.processExistingFiles(folderPath);
 
     const watcher = chokidar.watch(folderPath, {
       persistent: true,
-      ignoreInitial: true, // Ignore initial files if you don't want to process them at startup
+      ignoreInitial: true,
     });
 
     watcher.on('add', async (filePath) => {
@@ -63,9 +65,14 @@ export class FolderWatcherService {
       const job = await this.jobsService.enqueueJob(
         'process_bill',
         { filePath },
-        JobPriority.MEDIUM, // Adjust priority as needed
+        JobPriority.MEDIUM,
       );
       this.logger.log(`Enqueued job ${job.id} for file ${filePath}`);
+
+      // After successfully enqueuing a job, fetch updated processing queue
+      const updatedQueue = await this.billsService.getProcessingQueue();
+      // Emit the updated queue to all connected clients
+      this.billGateway.emitProcessingQueueUpdate(updatedQueue);
     } catch (error) {
       this.logger.error(
         `Error enqueuing job for file ${filePath}: ${error.message}`,

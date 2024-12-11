@@ -17,12 +17,13 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
-import { JobPriority } from '../bills/entities/job.entity'; // Adjusted import path
+import { JobPriority } from '../bills/entities/job.entity'; // Adjusted import path if needed
 import { JobsService } from '../jobs/jobs.service'; // Adjusted import path if needed
 import { BillGateway } from './bill.gateway';
 import { BillsService } from './bills.service';
 import { JobEntity } from './entities/job.entity';
 import { ProcessingInvoice } from './entities/processing-invoice.entity';
+import { EventLogService } from './services/event-log.service';
 
 const ARCHIVE_BASE_PATH = 'C:\\Users\\nate.mcnair\\Tritonv3\\backend\\Archive';
 
@@ -34,6 +35,7 @@ export class BillsController {
     private readonly billsService: BillsService,
     private readonly jobsService: JobsService,
     private readonly billGateway: BillGateway,
+    private readonly eventLogService: EventLogService,
   ) {}
 
   @Post('upload')
@@ -79,35 +81,26 @@ export class BillsController {
     }
 
     try {
-      const results = await Promise.all(
-        files.map(async (file) => {
-          const filePath = file.path;
+      const jobIds: string[] = [];
 
-          if (!fs.existsSync(filePath)) {
-            this.logger.error(`Uploaded file not found on server: ${filePath}`);
-            return {
-              file: file.originalname,
-              error: 'Uploaded file not found on server',
-            };
-          }
+      // Enqueue jobs for each uploaded file
+      for (const file of files) {
+        const job = await this.jobsService.enqueueJob(
+          'process_bill',
+          { filePath: file.path },
+          JobPriority.MEDIUM,
+        );
+        jobIds.push(job.id);
+      }
 
-          try {
-            const result = await this.billsService.processBill(filePath);
-            return { file: file.originalname, result };
-          } catch (error) {
-            this.logger.error(
-              `Error processing bill ${file.originalname}:`,
-              error,
-            );
-            return {
-              file: file.originalname,
-              error: error.message || 'Error processing the bill.',
-            };
-          }
-        }),
-      );
+      // Emit updated queue state after enqueuing jobs
+      const updatedQueue = await this.billsService.getProcessingQueue();
+      this.billGateway.emitProcessingQueueUpdate(updatedQueue);
 
-      return { message: 'Bills processed successfully', results };
+      // Note: We do NOT call processBill here directly anymore.
+      // The JobsProcessor will handle processing these jobs asynchronously.
+
+      return { message: 'Files queued for processing', jobIds };
     } catch (error) {
       this.logger.error('Error processing bills:', error);
       throw new HttpException(
@@ -246,5 +239,27 @@ export class BillsController {
     fileStream.on('end', () => {
       this.logger.log('File sent successfully');
     });
+  }
+
+  /**
+   * Fetches event logs for a given jobId.
+   * @param jobId - The job ID for which to fetch event logs.
+   */
+  @Get('events/:jobId')
+  async getEventsForJob(@Param('jobId') jobId: string) {
+    if (!jobId) {
+      throw new BadRequestException('jobId is required');
+    }
+
+    try {
+      const events = await this.eventLogService.getEventsByJobId(jobId);
+      return events;
+    } catch (error) {
+      this.logger.error(`Failed to fetch events for jobId ${jobId}:`, error);
+      throw new HttpException(
+        'Failed to fetch event logs',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 }

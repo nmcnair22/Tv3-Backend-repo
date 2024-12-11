@@ -11,8 +11,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as fs from 'fs';
 import pLimit from 'p-limit';
 import { Repository } from 'typeorm';
+import { BillGateway } from '../bill.gateway';
+import { EventType } from '../entities/event-log.entity';
 import { ProcessingInvoiceLineItem } from '../entities/processing-invoice-line-item.entity';
 import { ProcessingInvoice } from '../entities/processing-invoice.entity';
+import { EventLogService } from './event-log.service';
 
 @Injectable()
 export class AnalyzeService {
@@ -28,6 +31,8 @@ export class AnalyzeService {
     private invoiceRepository: Repository<ProcessingInvoice>,
     @InjectRepository(ProcessingInvoiceLineItem)
     private lineItemRepository: Repository<ProcessingInvoiceLineItem>,
+    private readonly billGateway: BillGateway,
+    private readonly eventLogService: EventLogService,
   ) {
     const key = this.configService.get<string>('AZURE_FORM_RECOGNIZER_KEY');
     const endpoint = this.configService.get<string>(
@@ -46,13 +51,38 @@ export class AnalyzeService {
   /**
    * Analyzes a bill using Azure Document Intelligence.
    * @param filePath - The path to the uploaded PDF file.
+   * @param jobId - The job ID for emitting updates and logging.
    * @returns The saved ProcessingInvoice entity.
    */
-  async analyzeWithAzure(filePath: string): Promise<ProcessingInvoice> {
+  async analyzeWithAzure(
+    filePath: string,
+    jobId: string,
+  ): Promise<ProcessingInvoice> {
     return this.azureLimit(async () => {
+      // Emit update that analysis is starting
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Processing',
+        step: 'AnalysisStarted',
+        detail: 'Sending file to Azure for analysis...',
+      });
+
+      await this.eventLogService.logEvent(
+        jobId,
+        EventType.INFO,
+        'Starting Azure document analysis.',
+        { filePath },
+      );
+
       // Check if file exists
       if (!fs.existsSync(filePath)) {
         this.logger.error(`File not found: ${filePath}`);
+        this.billGateway.emitError(jobId, 'File not found for analysis.');
+        await this.eventLogService.logEvent(
+          jobId,
+          EventType.ERROR,
+          'File not found during analysis.',
+          { filePath },
+        );
         throw new Error(`File not found: ${filePath}`);
       }
 
@@ -62,27 +92,43 @@ export class AnalyzeService {
 
       const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
       if (fileSizeInBytes > MAX_FILE_SIZE) {
-        this.logger.error(
-          `File size exceeds maximum allowed size of ${MAX_FILE_SIZE} bytes`,
+        const errMsg = `File size exceeds maximum allowed size of ${MAX_FILE_SIZE} bytes`;
+        this.logger.error(errMsg);
+        this.billGateway.emitError(jobId, errMsg);
+        await this.eventLogService.logEvent(
+          jobId,
+          EventType.ERROR,
+          'File size too large for analysis.',
+          { filePath, fileSize: fileSizeInBytes },
         );
-        throw new Error(
-          `File size exceeds maximum allowed size of ${MAX_FILE_SIZE} bytes`,
-        );
+        throw new Error(errMsg);
       }
 
       if (fileSizeInBytes === 0) {
-        this.logger.error(`File is empty: ${filePath}`);
-        throw new Error(`File is empty: ${filePath}`);
+        const errMsg = `File is empty: ${filePath}`;
+        this.logger.error(errMsg);
+        this.billGateway.emitError(jobId, errMsg);
+        await this.eventLogService.logEvent(
+          jobId,
+          EventType.ERROR,
+          'Empty file provided for analysis.',
+          { filePath },
+        );
+        throw new Error(errMsg);
       }
 
       this.logger.log(`Starting Azure analysis for file: ${filePath}`);
+      this.billGateway.emitUpdate(jobId, {
+        status: 'Processing',
+        step: 'AnalysisInProgress',
+        detail: 'File sent to Azure, awaiting analysis results...',
+      });
 
       const maxRetries = 3;
       let attempt = 0;
 
       while (attempt < maxRetries) {
         try {
-          // Read the file (either synchronously or using streams if necessary)
           const fileContent = fs.readFileSync(filePath);
 
           // Introduce delay to prevent rate limiting
@@ -95,7 +141,6 @@ export class AnalyzeService {
               body: fileContent,
             });
 
-          // Handle unexpected responses
           if (isUnexpected(initialResponse)) {
             throw initialResponse.body.error;
           }
@@ -123,16 +168,34 @@ export class AnalyzeService {
             throw new Error('Expected at least one document in the result.');
           }
 
-          // Extract all fields dynamically
+          // Extract fields
           const extractedData = this.extractFields(document);
           this.logger.log(
             `Extracted data: ${JSON.stringify(extractedData, null, 2)}`,
           );
 
-          // Save the extracted data to the database and get the saved invoice
+          this.billGateway.emitUpdate(jobId, {
+            status: 'Processing',
+            step: 'AnalysisDataExtracted',
+            detail: 'Data extracted from Azure response, saving to database...',
+          });
+
           const savedInvoice = await this.saveExtractedData(extractedData);
 
           this.logger.log(`Saved invoice with ID: ${savedInvoice.id}`);
+          this.billGateway.emitUpdate(jobId, {
+            status: 'Processing',
+            step: 'AnalysisCompleted',
+            detail: 'Invoice data saved successfully after analysis.',
+          });
+
+          await this.eventLogService.logEvent(
+            jobId,
+            EventType.INFO,
+            'Azure document analysis completed successfully.',
+            { invoiceId: savedInvoice.id },
+          );
+
           return savedInvoice;
         } catch (error) {
           attempt++;
@@ -147,9 +210,14 @@ export class AnalyzeService {
             );
             await new Promise((resolve) => setTimeout(resolve, delay));
           } else {
-            this.logger.error(
-              `Analysis failed after ${attempt} attempts: ${error.message}`,
-              { error },
+            const errMsg = `Analysis failed after ${attempt} attempts: ${error.message}`;
+            this.logger.error(errMsg, { error });
+            this.billGateway.emitError(jobId, errMsg);
+            await this.eventLogService.logEvent(
+              jobId,
+              EventType.ERROR,
+              'Azure document analysis failed.',
+              { attempts: attempt, error: error.message },
             );
             throw error;
           }
@@ -158,11 +226,6 @@ export class AnalyzeService {
     });
   }
 
-  /**
-   * Dynamically extracts all fields from the analyzed document.
-   * @param document - The analyzed document.
-   * @returns An object containing all extracted fields.
-   */
   private extractFields(document: any): any {
     const fields = document.fields;
 
@@ -219,15 +282,9 @@ export class AnalyzeService {
     return extractedData;
   }
 
-  /**
-   * Saves the extracted data to the database.
-   * @param extractedData - The data extracted from the invoice.
-   * @returns The saved ProcessingInvoice entity.
-   */
   private async saveExtractedData(
     extractedData: any,
   ): Promise<ProcessingInvoice> {
-    // Map extracted data to invoice entity
     const invoice = new ProcessingInvoice();
     invoice.invoice_id = extractedData.InvoiceId ?? null;
     invoice.invoice_date = extractedData.InvoiceDate ?? null;
@@ -258,7 +315,6 @@ export class AnalyzeService {
     invoice.service_start_date = extractedData.ServiceStartDate ?? null;
     invoice.service_end_date = extractedData.ServiceEndDate ?? null;
 
-    // Remove core fields to get other fields
     const otherFields = { ...extractedData };
     const coreFields = [
       'InvoiceId',
@@ -290,14 +346,12 @@ export class AnalyzeService {
     coreFields.forEach((field) => delete otherFields[field]);
     invoice.other_fields = otherFields;
 
-    // Save the invoice
     const savedInvoice = await this.invoiceRepository.save(invoice);
     this.logger.log(`Invoice saved with ID: ${savedInvoice.id}`);
 
-    // Save line items if any
     if (extractedData.Items && Array.isArray(extractedData.Items)) {
       for (const itemData of extractedData.Items) {
-        if (!itemData) continue; // Handle null or undefined items
+        if (!itemData) continue;
         const lineItem = new ProcessingInvoiceLineItem();
         lineItem.invoice = savedInvoice;
         lineItem.description = itemData.Description || null;
@@ -310,7 +364,6 @@ export class AnalyzeService {
         lineItem.tax_rate = itemData.TaxRate || null;
         lineItem.unit = itemData.Unit || null;
 
-        // Remove core fields to get other fields
         const itemOtherFields = { ...itemData };
         const itemCoreFields = [
           'Description',

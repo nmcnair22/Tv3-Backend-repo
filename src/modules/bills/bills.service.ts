@@ -15,6 +15,7 @@ import { BillTypeService } from './services/bill-type.service';
 import { ValidationService } from './services/validate.service';
 
 // Entities
+import { JobEntity } from './entities/job.entity';
 import { Location } from './entities/location.entity';
 import { ProcessingInvoiceLineItem } from './entities/processing-invoice-line-item.entity';
 import { ProcessingInvoice } from './entities/processing-invoice.entity';
@@ -209,7 +210,10 @@ export class BillsService {
       );
 
       // Analysis Phase
-      savedInvoice = await this.analyzeService.analyzeWithAzure(filePath);
+      savedInvoice = await this.analyzeService.analyzeWithAzure(
+        filePath,
+        jobId,
+      );
       if (!savedInvoice) {
         throw new Error('Saved invoice not found after analysis');
       }
@@ -989,13 +993,13 @@ export class BillsService {
     return temRecord;
   }
 
-  async getProcessingQueue(): Promise<TemBill[]> {
+  async getProcessingQueue(): Promise<JobEntity[]> {
     this.logger.log('Fetching Processing Queue...');
-    const queue = await this.temBillRepository.find({
-      where: { status: 'Processing' },
-      order: { created_at: 'DESC' },
-    });
-    this.logger.log(`Processing Queue Retrieved: ${queue.length} bills.`);
+    // Instead of looking up TemBills, we get the pending/in_progress jobs directly:
+    const queue = await this.jobsService.getJobsInQueue('process_bill');
+    this.logger.log(`Processing Queue Retrieved: ${queue.length} jobs.`);
+
+    // Emit these jobs in the gateway if you do that here or return them.
     return queue;
   }
 
