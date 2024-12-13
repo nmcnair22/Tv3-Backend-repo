@@ -44,6 +44,7 @@ export class ValidationService {
   ): Promise<ValidationResult> {
     // Prepare the invoice data
     const invoiceData = this.buildInvoiceData(invoice);
+    this.logger.debug('Full invoice data to OpenAI:\n' + invoiceData);
 
     try {
       // Notify that validation is starting
@@ -183,7 +184,33 @@ export class ValidationService {
         })) || [],
     };
 
-    return JSON.stringify(invoiceData, null, 2);
+    // Convert tables into a textual format
+    let tablesText = '';
+    if (invoice.tables && invoice.tables.length > 0) {
+      tablesText += '\n\nExtracted Tables:\n';
+      invoice.tables.forEach((table, tableIndex) => {
+        tablesText += `\nTable ${tableIndex + 1}\n`;
+
+        // We'll reconstruct the table rows
+        // First, build a 2D array representing the rows and columns
+        const tableMatrix: string[][] = Array.from(
+          { length: table.row_count },
+          () => Array(table.column_count).fill(''),
+        );
+        for (const cell of table.cells) {
+          tableMatrix[cell.row_index][cell.column_index] = cell.content || '';
+        }
+
+        // Convert each row of the matrix into a line of text
+        for (const row of tableMatrix) {
+          // Join the columns with a tab or some spacing
+          tablesText += row.join('\t') + '\n';
+        }
+      });
+    }
+
+    // We will send the invoice and line item data as JSON, then append the table data as text.
+    return JSON.stringify(invoiceData, null, 2) + tablesText;
   }
 
   private async createThread(): Promise<string> {

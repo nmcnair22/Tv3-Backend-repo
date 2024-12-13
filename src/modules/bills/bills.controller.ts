@@ -18,12 +18,13 @@ import { Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
 import { JobPriority } from '../bills/entities/job.entity'; // Adjusted import path if needed
-import { JobsService } from '../jobs/jobs.service'; // Adjusted import path if needed
+import { JobsService } from '../jobs/jobs.service'; // Adjust if needed
 import { BillGateway } from './bill.gateway';
 import { BillsService } from './bills.service';
 import { JobEntity } from './entities/job.entity';
 import { ProcessingInvoice } from './entities/processing-invoice.entity';
 import { EventLogService } from './services/event-log.service';
+import { MissingBillsService } from './services/missing-bills.service'; // Import the missing bills service
 
 const ARCHIVE_BASE_PATH = 'C:\\Users\\nate.mcnair\\Tritonv3\\backend\\Archive';
 
@@ -36,6 +37,7 @@ export class BillsController {
     private readonly jobsService: JobsService,
     private readonly billGateway: BillGateway,
     private readonly eventLogService: EventLogService,
+    private readonly missingBillsService: MissingBillsService, // Inject MissingBillsService
   ) {}
 
   @Post('upload')
@@ -96,9 +98,6 @@ export class BillsController {
       // Emit updated queue state after enqueuing jobs
       const updatedQueue = await this.billsService.getProcessingQueue();
       this.billGateway.emitProcessingQueueUpdate(updatedQueue);
-
-      // Note: We do NOT call processBill here directly anymore.
-      // The JobsProcessor will handle processing these jobs asynchronously.
 
       return { message: 'Files queued for processing', jobIds };
     } catch (error) {
@@ -241,10 +240,6 @@ export class BillsController {
     });
   }
 
-  /**
-   * Fetches event logs for a given jobId.
-   * @param jobId - The job ID for which to fetch event logs.
-   */
   @Get('events/:jobId')
   async getEventsForJob(@Param('jobId') jobId: string) {
     if (!jobId) {
@@ -258,6 +253,28 @@ export class BillsController {
       this.logger.error(`Failed to fetch events for jobId ${jobId}:`, error);
       throw new HttpException(
         'Failed to fetch event logs',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // Added endpoint to run missing bills check directly in the BillsController
+  @Post('missing-bills/run-check')
+  async runMissingBillsCheck(): Promise<{ message: string }> {
+    await this.missingBillsService.runMissingBillsCheck();
+    return { message: 'Missing bills check completed' };
+  }
+
+  @Get('missing-bills')
+  async getMissingBills(): Promise<any[]> {
+    try {
+      const data =
+        await this.missingBillsService.getMissingAccountsWithDetails();
+      return data;
+    } catch (error) {
+      this.logger.error('Failed to fetch missing bills:', error);
+      throw new HttpException(
+        'Failed to fetch missing bills',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

@@ -21,6 +21,11 @@ import { TemBill } from './entities/tem-bill.entity';
 import { TemCustomer } from './entities/tem-customer.entity';
 import { TemVendor } from './entities/tem-vendor.entity';
 
+// Add new entities
+import { Notification } from './entities/notification.entity';
+import { ProcessingInvoiceTableCell } from './entities/processing-invoice-table-cell.entity';
+import { ProcessingInvoiceTable } from './entities/processing-invoice-table.entity';
+
 // Entities from the old 'tem' database
 import { TemMasterView } from './entities/tem-master-view.entity';
 import { TemVendorOld } from './entities/tem-vendor-old.entity';
@@ -35,6 +40,7 @@ import { AnalyzeService } from './services/analyze.service';
 import { ArchiveService } from './services/archive.service';
 import { BillTypeService } from './services/bill-type.service';
 import { EventLogService } from './services/event-log.service';
+import { MissingBillsService } from './services/missing-bills.service';
 import { ValidationService } from './services/validate.service';
 
 @Module({
@@ -51,6 +57,9 @@ import { ValidationService } from './services/validate.service';
       ProcessingInvoiceLineItem,
       Location,
       EventLog,
+      ProcessingInvoiceTable,
+      ProcessingInvoiceTableCell,
+      Notification,
     ]),
     JobsModule,
     // Connection to the old 'tem' database
@@ -71,8 +80,9 @@ import { ValidationService } from './services/validate.service';
     FolderWatcherService,
     EventLogService,
     MetricsService,
+    MissingBillsService,
   ],
   controllers: [BillsController, MetricsController],
-  exports: [BillsService],
+  exports: [BillsService, MissingBillsService],
 })
 export class BillsModule {}

@@ -310,6 +310,16 @@ export class BillsService {
           detail: 'Preparing to validate the invoice data...',
         });
 
+        savedInvoice = await this.invoiceRepository.findOne({
+          where: { id: savedInvoice.id },
+          relations: {
+            line_items: true,
+            tables: {
+              cells: true,
+            },
+          },
+        });
+
         const validationResult = await this.validateInvoice(
           savedInvoice,
           jobId,

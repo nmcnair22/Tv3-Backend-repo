@@ -12,6 +12,8 @@ import {
 } from 'typeorm';
 import { ProcessingInvoiceLineItem } from './processing-invoice-line-item.entity';
 import { TemAccount } from './tem-account.entity';
+// Import the new entity
+import { ProcessingInvoiceTable } from './processing-invoice-table.entity';
 
 @Entity('processing_invoices')
 export class ProcessingInvoice {
@@ -108,7 +110,7 @@ export class ProcessingInvoice {
   validation_level: number; // 1 or 2
 
   @Column({ type: 'json', nullable: true })
-  validation_errors: any; // Adjusted to 'any' to match JSON data type
+  validation_errors: any;
 
   @Column({ nullable: true })
   status: string; // e.g., 'Processed', 'Error', 'Audit', 'MLB Pending'
@@ -137,4 +139,10 @@ export class ProcessingInvoice {
 
   @Column({ nullable: true })
   account_id: number;
+
+  // New relationship to tables
+  @OneToMany(() => ProcessingInvoiceTable, (table) => table.invoice, {
+    cascade: true,
+  })
+  tables: ProcessingInvoiceTable[];
 }

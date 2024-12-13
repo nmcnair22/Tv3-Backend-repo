@@ -1,14 +1,12 @@
-// src/modules/bills/entities/tem-account.entity.ts
-
 import {
-    Column,
-    CreateDateColumn,
-    Entity,
-    JoinColumn,
-    ManyToOne,
-    OneToMany,
-    PrimaryGeneratedColumn,
-    UpdateDateColumn,
+  Column,
+  CreateDateColumn,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 import { Location } from './location.entity';
 import { TemBill } from './tem-bill.entity';
@@ -25,6 +23,9 @@ export class TemAccount {
 
   @Column({ length: 255 })
   account_number: string;
+
+  @Column({ type: 'boolean', default: false })
+  missing_bill_flag: boolean;
 
   @Column({ nullable: true })
   customer_id: number;
@@ -68,7 +69,6 @@ export class TemAccount {
   @Column('json', { nullable: true })
   address: any;
 
-  // New columns
   @Column('decimal', { precision: 15, scale: 2, nullable: true })
   balance: number;
 
@@ -153,8 +153,6 @@ export class TemAccount {
     onUpdate: 'CURRENT_TIMESTAMP',
   })
   updated_at: Date;
-
-  // Relations
 
   @ManyToOne(() => TemVendor)
   @JoinColumn({ name: 'vendor_id' })

@@ -1,15 +1,13 @@
-// src/modules/bills/entities/tem-bill.entity.ts
-
 import {
-    Column,
-    CreateDateColumn,
-    Entity,
-    JoinColumn,
-    ManyToOne,
-    OneToMany,
-    PrimaryGeneratedColumn,
-    Unique,
-    UpdateDateColumn,
+  Column,
+  CreateDateColumn,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+  PrimaryGeneratedColumn,
+  Unique,
+  UpdateDateColumn,
 } from 'typeorm';
 import { TemAccount } from './tem-account.entity';
 import { TemBillLineItem } from './tem-bill-line-item.entity';
@@ -77,8 +75,6 @@ export class TemBill {
     onUpdate: 'CURRENT_TIMESTAMP',
   })
   updated_at: Date;
-
-  // Relations
 
   @ManyToOne(() => TemAccount, (account) => account.bills)
   @JoinColumn({ name: 'account_id' })
