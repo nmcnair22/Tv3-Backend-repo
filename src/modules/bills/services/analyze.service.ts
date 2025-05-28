@@ -16,9 +16,6 @@ import { EventType } from '../entities/event-log.entity';
 import { ProcessingInvoiceLineItem } from '../entities/processing-invoice-line-item.entity';
 import { ProcessingInvoice } from '../entities/processing-invoice.entity';
 import { EventLogService } from './event-log.service';
-// Import the new entities
-import { ProcessingInvoiceTableCell } from '../entities/processing-invoice-table-cell.entity';
-import { ProcessingInvoiceTable } from '../entities/processing-invoice-table.entity';
 
 @Injectable()
 export class AnalyzeService {
@@ -34,10 +31,6 @@ export class AnalyzeService {
     private invoiceRepository: Repository<ProcessingInvoice>,
     @InjectRepository(ProcessingInvoiceLineItem)
     private lineItemRepository: Repository<ProcessingInvoiceLineItem>,
-    @InjectRepository(ProcessingInvoiceTable)
-    private processingInvoiceTableRepository: Repository<ProcessingInvoiceTable>,
-    @InjectRepository(ProcessingInvoiceTableCell)
-    private processingInvoiceTableCellRepository: Repository<ProcessingInvoiceTableCell>,
     private readonly billGateway: BillGateway,
     private readonly eventLogService: EventLogService,
   ) {
@@ -190,36 +183,18 @@ export class AnalyzeService {
             detail: 'Invoice data saved successfully after analysis.',
           });
 
-          // Save the filtered tables to the database
+          // *** NEW CODE HERE: Print out all table data ***
           if (analyzeResult.tables && analyzeResult.tables.length > 0) {
+            this.logger.log(
+              'Extracted Table Data:\n' +
+                JSON.stringify(analyzeResult.tables, null, 2),
+            );
+            // NEW CODE: Filter the table data and print it out
             const filteredTables = this.filterTableData(analyzeResult.tables);
             this.logger.log(
               'Filtered Table Data:\n' +
                 JSON.stringify(filteredTables, null, 2),
             );
-
-            // Save each table and its cells
-            for (const tableData of filteredTables) {
-              const invoiceTable = new ProcessingInvoiceTable();
-              invoiceTable.invoice = savedInvoice;
-              invoiceTable.row_count = tableData.rowCount;
-              invoiceTable.column_count = tableData.columnCount;
-              const savedTable =
-                await this.processingInvoiceTableRepository.save(invoiceTable);
-
-              for (const cellData of tableData.cells) {
-                const cell = new ProcessingInvoiceTableCell();
-                cell.table = savedTable;
-                cell.row_index = cellData.rowIndex;
-                cell.column_index = cellData.columnIndex;
-                cell.content = cellData.content || null;
-                await this.processingInvoiceTableCellRepository.save(cell);
-              }
-
-              this.logger.log(
-                `Table with ID: ${savedTable.id} saved for invoice ID: ${savedInvoice.id}`,
-              );
-            }
           } else {
             this.logger.log('No tables found in the analysis result.');
           }
@@ -424,6 +399,7 @@ export class AnalyzeService {
     return savedInvoice;
   }
 
+  // NEW CODE ADDED: Filter the table data
   private filterTableData(rawTables: any[]): any[] {
     if (!rawTables || !Array.isArray(rawTables)) {
       return [];

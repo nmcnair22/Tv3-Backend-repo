@@ -41,11 +41,14 @@ import { ArchiveService } from './services/archive.service';
 import { BillTypeService } from './services/bill-type.service';
 import { EventLogService } from './services/event-log.service';
 import { MissingBillsService } from './services/missing-bills.service';
+import { RagOpenAiService } from './services/rag-openai.service'; // <-- you already have this
+import { RagPineconeService } from './services/rag-pinecone.service'; // <-- Add import
+import { RagVisionService } from './services/rag-vision.service';
+import { RagService } from './services/rag.service';
 import { ValidationService } from './services/validate.service';
 
 @Module({
   imports: [
-    // Connection to the new database (default connection)
     TypeOrmModule.forFeature([
       TemAccount,
       TemMasterView,
@@ -62,14 +65,13 @@ import { ValidationService } from './services/validate.service';
       Notification,
     ]),
     JobsModule,
-    // Connection to the old 'tem' database
     TypeOrmModule.forFeature([TemVendorOld, TemMasterView], 'temConnection'),
-    // Connection to the old 'cissdm' database
     TypeOrmModule.forFeature(
       [CissdmCustomer, CissdmLocation, CissdmProvider],
       'cissdmConnection',
     ),
   ],
+  controllers: [BillsController, MetricsController],
   providers: [
     BillsService,
     AnalyzeService,
@@ -81,8 +83,12 @@ import { ValidationService } from './services/validate.service';
     EventLogService,
     MetricsService,
     MissingBillsService,
+
+    RagService, // RAG pipeline
+    RagVisionService, // Vision-based RAG
+    RagOpenAiService, // provides embeddings / completions
+    RagPineconeService, // <-- ADD THIS so Nest can inject it into RagService
   ],
-  controllers: [BillsController, MetricsController],
-  exports: [BillsService, MissingBillsService],
+  exports: [BillsService, MissingBillsService, RagService],
 })
 export class BillsModule {}

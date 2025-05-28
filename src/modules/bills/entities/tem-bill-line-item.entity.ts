@@ -1,13 +1,13 @@
 // src/modules/bills/entities/tem-bill-line-item.entity.ts
 
 import {
-    Column,
-    CreateDateColumn,
-    Entity,
-    JoinColumn,
-    ManyToOne,
-    PrimaryGeneratedColumn,
-    UpdateDateColumn,
+  Column,
+  CreateDateColumn,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 import { TemBill } from './tem-bill.entity';
 
@@ -62,7 +62,9 @@ export class TemBillLineItem {
   })
   updated_at: Date;
 
-  // Relations
+  // New boolean column
+  @Column({ type: 'boolean', default: true })
+  include_in_total: boolean;
 
   @ManyToOne(() => TemBill, (bill) => bill.line_items)
   @JoinColumn({ name: 'bill_id' })

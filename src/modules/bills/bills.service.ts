@@ -553,7 +553,7 @@ export class BillsService {
     validationResult: ValidationResult,
     filePath: string,
     temRecord: TemMasterView,
-    jobId: string, // added jobId
+    jobId: string,
   ): Promise<boolean> {
     try {
       this.logger.log(`Finalizing invoice ${invoice.id}`);
@@ -653,6 +653,10 @@ export class BillsService {
           temLineItem.amount = lineItemData.Amount;
           temLineItem.category = lineItemData.Category || null;
           temLineItem.subcategory = lineItemData.SubCategory || null;
+
+          // Assign the IncludeInTotal field from the assistant's response
+          temLineItem.include_in_total = lineItemData.IncludeInTotal === true;
+
           temLineItem.bill = temBill;
           temBillLineItems.push(temLineItem);
         }
@@ -674,7 +678,7 @@ export class BillsService {
       const newFilePath = await this.archiveService.archiveBill(
         temBill,
         filePath,
-        jobId, // Pass jobId
+        jobId,
       );
 
       temBill.archived_file_path = newFilePath;
@@ -692,7 +696,6 @@ export class BillsService {
       throw error;
     }
   }
-
   private generateFingerprint(
     invoice: ProcessingInvoice,
     account: TemAccount,

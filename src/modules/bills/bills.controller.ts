@@ -1,3 +1,5 @@
+// src/modules/bills/bills.controller.ts
+
 import {
   BadRequestException,
   Controller,
@@ -10,21 +12,26 @@ import {
   Post,
   Query,
   Res,
+  UploadedFile,
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { FilesInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import * as fs from 'fs';
+import { diskStorage } from 'multer'; // <-- import diskStorage
 import * as path from 'path';
-import { JobPriority } from '../bills/entities/job.entity'; // Adjusted import path if needed
-import { JobsService } from '../jobs/jobs.service'; // Adjust if needed
+
+import { JobsService } from '../jobs/jobs.service';
 import { BillGateway } from './bill.gateway';
 import { BillsService } from './bills.service';
-import { JobEntity } from './entities/job.entity';
+import { JobEntity, JobPriority } from './entities/job.entity';
 import { ProcessingInvoice } from './entities/processing-invoice.entity';
 import { EventLogService } from './services/event-log.service';
-import { MissingBillsService } from './services/missing-bills.service'; // Import the missing bills service
+import { MissingBillsService } from './services/missing-bills.service';
+
+// Import your RAG service
+import { RagService } from './services/rag.service';
 
 const ARCHIVE_BASE_PATH = 'C:\\Users\\nate.mcnair\\Tritonv3\\backend\\Archive';
 
@@ -37,14 +44,14 @@ export class BillsController {
     private readonly jobsService: JobsService,
     private readonly billGateway: BillGateway,
     private readonly eventLogService: EventLogService,
-    private readonly missingBillsService: MissingBillsService, // Inject MissingBillsService
+    private readonly missingBillsService: MissingBillsService,
+    private readonly ragService: RagService, // RAG service
   ) {}
 
   @Post('upload')
   @UseInterceptors(FilesInterceptor('files'))
   async uploadBills(@UploadedFiles() files: Express.Multer.File[]) {
     const jobIds: string[] = [];
-
     for (const file of files) {
       const job = await this.jobsService.enqueueJob(
         'process_bill',
@@ -70,9 +77,9 @@ export class BillsController {
         cb(null, true);
       },
       limits: {
-        fileSize: 10 * 1024 * 1024, // 10 MB per file
+        fileSize: 10 * 1024 * 1024, // 10 MB
       },
-      dest: './uploads/',
+      dest: './uploads/', // older approach for disk usage
     }),
   )
   async processBills(
@@ -84,8 +91,6 @@ export class BillsController {
 
     try {
       const jobIds: string[] = [];
-
-      // Enqueue jobs for each uploaded file
       for (const file of files) {
         const job = await this.jobsService.enqueueJob(
           'process_bill',
@@ -95,7 +100,6 @@ export class BillsController {
         jobIds.push(job.id);
       }
 
-      // Emit updated queue state after enqueuing jobs
       const updatedQueue = await this.billsService.getProcessingQueue();
       this.billGateway.emitProcessingQueueUpdate(updatedQueue);
 
@@ -204,21 +208,19 @@ export class BillsController {
     this.logger.log(
       `Incoming request to /api/bills/file: path=${filePathParam}`,
     );
-
     if (!filePathParam) {
       throw new BadRequestException('Missing path query parameter');
     }
 
     const cleanedPath = filePathParam.replace(/\\/g, '/');
     const filePath = cleanedPath;
-
     this.logger.log(`Final file path: ${filePath}`);
+
     if (!fs.existsSync(filePath)) {
       this.logger.warn(`File not found: ${filePath}`);
       return res.status(404).send('File not found');
     }
 
-    // Set the response headers
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': 'inline; filename="bill.pdf"',
@@ -258,7 +260,8 @@ export class BillsController {
     }
   }
 
-  // Added endpoint to run missing bills check directly in the BillsController
+  /** MISSING BILLS ENDPOINTS **/
+
   @Post('missing-bills/run-check')
   async runMissingBillsCheck(): Promise<{ message: string }> {
     await this.missingBillsService.runMissingBillsCheck();
@@ -278,5 +281,58 @@ export class BillsController {
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  /** RAG PROCESS (Vision optional) **/
+  @Post('rag/process')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      // 1) Use diskStorage so that `file.path` is set
+      storage: diskStorage({
+        destination: './uploads', // folder for your PDFs
+        filename: (req, file, cb) => {
+          // create a unique file name
+          const uniqueSuffix =
+            Date.now() + '-' + Math.round(Math.random() * 1e9);
+          cb(null, `bill-${uniqueSuffix}.pdf`);
+        },
+      }),
+      limits: {
+        fileSize: 20 * 1024 * 1024, // e.g. 20MB if you want
+      },
+    }),
+  )
+  async processRagBill(
+    @UploadedFile() file: Express.Multer.File,
+    @Query('useVision') useVision: string,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    this.logger.debug(`Received file on disk: ${file.path}`);
+
+    const visionFlag = useVision === 'true';
+    const docId = `RAG-Doc-${Date.now()}`;
+
+    await this.ragService.processBillForRag(file.path, docId, visionFlag);
+
+    return { message: 'RAG process completed', useVision: visionFlag, docId };
+  }
+
+  /**
+   * Example optional endpoint to ask questions about a doc
+   * e.g. GET /api/bills/rag/ask?docId=RAG-Doc-168618&question=What's%20the%20total%3F
+   */
+  @Get('rag/ask')
+  async askQuestion(
+    @Query('docId') docId: string,
+    @Query('question') question: string,
+  ) {
+    if (!docId || !question) {
+      throw new BadRequestException('Must provide docId and question');
+    }
+    const answer = await this.ragService.askQuestion(docId, question);
+    return { docId, question, answer };
   }
 }
